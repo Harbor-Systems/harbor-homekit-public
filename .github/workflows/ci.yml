@@ -12,7 +12,7 @@ jobs:
   scripts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: ShellCheck
         run: shellcheck ./*.sh ./scripts/*.sh ./tests/*.sh
       - name: Repository tests
@@ -21,7 +21,7 @@ jobs:
   patched-build:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.5"
