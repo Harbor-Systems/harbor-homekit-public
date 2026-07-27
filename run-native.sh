@@ -6,6 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 BIN="./go2rtc"
+GATEWAY_BIN="./harbor-whip-gateway"
+TOKEN_FILE="./.harbor-whip-token"
 REPOSITORY="Harbor-Systems/harbor-homekit-public"
 # shellcheck disable=SC1091
 source ./scripts/versions.env
@@ -13,6 +15,14 @@ RELEASE="${HARBOR_HOMEKIT_RELEASE_OVERRIDE:-$HARBOR_HOMEKIT_RELEASE}"
 
 # Replace the template sentinel on first run and preserve the resulting PIN.
 ./generate-homekit-pin.sh ./go2rtc.yaml
+
+if ! grep -Fq 'listen: "127.0.0.1:1985"' go2rtc.yaml ||
+   ! grep -Fq 'listen: "127.0.0.1:8554"' go2rtc.yaml ||
+   ! grep -Fq 'allow_paths: [ffmpeg]' go2rtc.yaml; then
+  echo "go2rtc.yaml does not contain Harbor's required security settings." >&2
+  echo "Merge the hardened blocks from the repository template before running." >&2
+  exit 1
+fi
 
 # Map platform -> release asset name.
 os="$(uname -s)"
@@ -29,7 +39,7 @@ case "$arch" in
 esac
 asset="harbor-homekit-go2rtc_${os_tag}_${arch_tag}.zip"
 
-if [ ! -x "$BIN" ]; then
+if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
   base_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE}"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
@@ -53,7 +63,14 @@ if [ ! -x "$BIN" ]; then
   fi
   unzip -oq "$tmp/$asset" -d "$tmp/unpacked"
   mv "$tmp/unpacked/go2rtc" "$BIN"
-  chmod +x "$BIN"
+  mv "$tmp/unpacked/harbor-whip-gateway" "$GATEWAY_BIN"
+  chmod +x "$BIN" "$GATEWAY_BIN"
+fi
+
+if [ ! -x "$GATEWAY_BIN" ]; then
+  echo "Harbor WHIP gateway is missing. Remove ./go2rtc and rerun to download" >&2
+  echo "the complete pinned release, or build the gateway from source." >&2
+  exit 1
 fi
 
 # ffmpeg is needed for transcoding fallbacks. Warn if missing.
@@ -62,4 +79,54 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   echo "         your publisher sends non-H264/OPUS codecs." >&2
 fi
 
-exec "$BIN" -config go2rtc.yaml
+stream_name="$(
+  awk '
+    /^streams:/ { in_streams=1; next }
+    in_streams && /^[^[:space:]#]/ { exit }
+    in_streams && /^[[:space:]]+"[^"]+":/ {
+      line=$0
+      sub(/^[[:space:]]+"/, "", line)
+      sub(/":.*/, "", line)
+      print line
+      exit
+    }
+  ' go2rtc.yaml
+)"
+if [ -z "$stream_name" ] || [ "$stream_name" = "CAMERA_SERIAL" ]; then
+  echo "Could not determine the configured Harbor camera serial." >&2
+  exit 1
+fi
+
+if [ ! -f "$TOKEN_FILE" ]; then
+  umask 077
+  od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]' > "$TOKEN_FILE"
+fi
+chmod 600 "$TOKEN_FILE"
+
+go2rtc_pid=""
+gateway_pid=""
+# shellcheck disable=SC2329 # Invoked by the EXIT/INT/TERM trap below.
+cleanup() {
+  trap - EXIT INT TERM
+  [ -z "$gateway_pid" ] || kill "$gateway_pid" >/dev/null 2>&1 || true
+  [ -z "$go2rtc_pid" ] || kill "$go2rtc_pid" >/dev/null 2>&1 || true
+  [ -z "$gateway_pid" ] || wait "$gateway_pid" >/dev/null 2>&1 || true
+  [ -z "$go2rtc_pid" ] || wait "$go2rtc_pid" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+"$BIN" -config go2rtc.yaml &
+go2rtc_pid="$!"
+HARBOR_WHIP_TOKEN_FILE="$TOKEN_FILE" \
+HARBOR_WHIP_STREAM="$stream_name" \
+HARBOR_GO2RTC_URL="http://127.0.0.1:1985" \
+  "$GATEWAY_BIN" &
+gateway_pid="$!"
+
+# Bash 3.2 ships with macOS and has no `wait -n`, so supervise both children.
+while kill -0 "$go2rtc_pid" >/dev/null 2>&1 && \
+      kill -0 "$gateway_pid" >/dev/null 2>&1; do
+  sleep 2
+done
+echo "Harbor HomeKit stopped because a required process exited." >&2
+exit 1

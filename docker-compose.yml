@@ -6,10 +6,13 @@
 #
 # host networking is required so HomeKit's mDNS advertisement reaches the LAN.
 services:
-  go2rtc:
-    image: alexxit/go2rtc:1.9.14
-    container_name: go2rtc
+  harbor-homekit:
+    build:
+      context: .
+    container_name: harbor-homekit
     network_mode: host            # required for HomeKit mDNS (Linux only)
     restart: unless-stopped
     volumes:
+      # Writable so go2rtc can preserve HomeKit pairing records.
       - ./go2rtc.yaml:/config/go2rtc.yaml
+      - ./.harbor-data:/harbor

@@ -8,8 +8,20 @@ for script in ./*.sh ./scripts/*.sh ./tests/*.sh; do
   bash -n "$script"
 done
 
-if [ "$(grep -o 'CAMERA_SERIAL' go2rtc.yaml | wc -l | tr -d ' ')" -ne 4 ]; then
-  echo "go2rtc.yaml must use CAMERA_SERIAL consistently in four places" >&2
+if [ "$(grep -o 'CAMERA_SERIAL' go2rtc.yaml | wc -l | tr -d ' ')" -ne 3 ]; then
+  echo "go2rtc.yaml must use CAMERA_SERIAL consistently in three places" >&2
+  exit 1
+fi
+
+if ! grep -q 'listen: "127.0.0.1:1985"' go2rtc.yaml ||
+   ! grep -q 'listen: "127.0.0.1:8554"' go2rtc.yaml; then
+  echo "go2rtc API and RTSP listeners must remain loopback-only" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'allow_paths: [/api/streams, /api/webrtc]' go2rtc.yaml ||
+   ! grep -Fq 'allow_paths: [ffmpeg]' go2rtc.yaml; then
+  echo "go2rtc API and executable allowlists are missing" >&2
   exit 1
 fi
 

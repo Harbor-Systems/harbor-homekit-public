@@ -1,11 +1,26 @@
 # go2rtc — Harbor camera (WHIP ingest) -> Apple HomeKit
 # WHIP docs: https://github.com/Harbor-Systems/harbor-python#whip-endpoint
 #
-# The camera publishes to:
-#   http://<HOST-IP>:1984/api/webrtc?dst=CAMERA_SERIAL
+# The installer prints the authenticated gateway URL for the Harbor app.
+# The camera publishes to the gateway on port 1984; go2rtc's API remains local.
 # so the stream name below MUST equal the camera serial.
 #
-# Defaults used (no need to set them): api :1984, webrtc :8555.
+app:
+  # Minimize the loaded attack surface. `exec` is required for FFmpeg.
+  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit]
+
+api:
+  # Never expose go2rtc's powerful API or Web UI to the LAN.
+  listen: "127.0.0.1:1985"
+  allow_paths: [/api/streams, /api/webrtc]
+
+rtsp:
+  # FFmpeg uses RTSP internally; customers do not need LAN access to it.
+  listen: "127.0.0.1:8554"
+
+exec:
+  # Prevent API-controlled execution of anything except FFmpeg.
+  allow_paths: [ffmpeg]
 
 streams:
   # The camera pushes into this stream via WHIP as H265 + OPUS.

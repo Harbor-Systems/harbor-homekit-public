@@ -33,6 +33,10 @@ jobs:
           ./scripts/build-go2rtc.sh darwin amd64 dist/go2rtc-mac-amd64
           ./scripts/build-go2rtc.sh linux arm64 dist/go2rtc-linux-arm64
           ./scripts/build-go2rtc.sh linux amd64 dist/go2rtc-linux-amd64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/gateway-mac-arm64 ./cmd/whip-gateway
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-mac-amd64 ./cmd/whip-gateway
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-arm64 ./cmd/whip-gateway
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-amd64 ./cmd/whip-gateway
       - name: Optionally sign macOS binaries
         if: ${{ env.APPLE_CERTIFICATE_P12 != '' }}
         run: |
@@ -53,6 +57,11 @@ jobs:
               --sign "$APPLE_SIGNING_IDENTITY" "$binary"
             codesign --verify --strict --verbose=2 "$binary"
           done
+          for binary in dist/gateway-mac-*; do
+            codesign --force --options runtime --timestamp \
+              --sign "$APPLE_SIGNING_IDENTITY" "$binary"
+            codesign --verify --strict --verbose=2 "$binary"
+          done
       - name: Package archives
         run: |
           set -euo pipefail
@@ -61,9 +70,11 @@ jobs:
             mkdir -p "$package_dir"
             binary_platform="${platform/_/-}"
             cp "dist/go2rtc-$binary_platform" "$package_dir/go2rtc"
+            cp "dist/gateway-$binary_platform" "$package_dir/harbor-whip-gateway"
             (
               cd "$package_dir"
-              zip -q "$GITHUB_WORKSPACE/dist/harbor-homekit-go2rtc_${platform}.zip" go2rtc
+              zip -q "$GITHUB_WORKSPACE/dist/harbor-homekit-go2rtc_${platform}.zip" \
+                go2rtc harbor-whip-gateway
             )
           done
       - name: Optionally notarize macOS archives

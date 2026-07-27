@@ -88,10 +88,61 @@ fi
 if [ "$config_base" != "$INSTALL_DIR/go2rtc.yaml" ]; then
   ditto "$config_base" "$INSTALL_DIR/go2rtc.yaml"
 fi
+
+# Migrate the v0.1.x paired config without replacing the HomeKit records that
+# go2rtc wrote into it. Refuse to guess when a customer already has custom
+# top-level security/listener blocks.
+if ! grep -Fq 'listen: "127.0.0.1:1985"' "$INSTALL_DIR/go2rtc.yaml" ||
+   ! grep -Fq 'listen: "127.0.0.1:8554"' "$INSTALL_DIR/go2rtc.yaml" ||
+   ! grep -Fq 'allow_paths: [/api/streams, /api/webrtc]' "$INSTALL_DIR/go2rtc.yaml" ||
+   ! grep -Fq 'allow_paths: [ffmpeg]' "$INSTALL_DIR/go2rtc.yaml"; then
+  if grep -Eq '^(app|api|rtsp|exec):[[:space:]]*$' "$INSTALL_DIR/go2rtc.yaml"; then
+    echo "The installed config has custom listener/security settings." >&2
+    echo "Back it up, merge the hardened blocks from go2rtc.yaml, and retry." >&2
+    exit 1
+  fi
+  migrated_config="$(mktemp "$INSTALL_DIR/go2rtc.yaml.migrate.XXXXXX")"
+  {
+    printf '%s\n' \
+      'app:' \
+      '  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit]' \
+      '' \
+      'api:' \
+      '  listen: "127.0.0.1:1985"' \
+      '  allow_paths: [/api/streams, /api/webrtc]' \
+      '' \
+      'rtsp:' \
+      '  listen: "127.0.0.1:8554"' \
+      '' \
+      'exec:' \
+      '  allow_paths: [ffmpeg]' \
+      ''
+    sed '/^# go2rtc — Harbor camera/,/^# Defaults used/d' "$INSTALL_DIR/go2rtc.yaml"
+  } > "$migrated_config"
+  chmod 600 "$migrated_config"
+  mv "$migrated_config" "$INSTALL_DIR/go2rtc.yaml"
+fi
 sed -i '' -E "s/^([[:space:]]+pin:).*/\\1 $homekit_pin        # unique PIN generated during installation/" "$INSTALL_DIR/go2rtc.yaml"
 written_pin="$(read_pin "$INSTALL_DIR/go2rtc.yaml")"
 if ! is_valid_pin "$written_pin" || [ "$written_pin" != "$homekit_pin" ]; then
   echo "HomeKit pin setting could not be written to $INSTALL_DIR/go2rtc.yaml" >&2
+  exit 1
+fi
+stream_name="$(
+  awk '
+    /^streams:/ { in_streams=1; next }
+    in_streams && /^[^[:space:]#]/ { exit }
+    in_streams && /^[[:space:]]+"[^"]+":/ {
+      line=$0
+      sub(/^[[:space:]]+"/, "", line)
+      sub(/":.*/, "", line)
+      print line
+      exit
+    }
+  ' "$INSTALL_DIR/go2rtc.yaml"
+)"
+if [ -z "$stream_name" ]; then
+  echo "Could not determine the configured Harbor camera serial." >&2
   exit 1
 fi
 chmod 600 "$INSTALL_DIR/go2rtc.yaml"
@@ -107,6 +158,10 @@ chmod 600 "$INSTALL_DIR/scripts/versions.env"
 if [ -x ./go2rtc ]; then
   ditto ./go2rtc "$INSTALL_DIR/go2rtc"
   chmod 700 "$INSTALL_DIR/go2rtc"
+fi
+if [ -x ./harbor-whip-gateway ]; then
+  ditto ./harbor-whip-gateway "$INSTALL_DIR/harbor-whip-gateway"
+  chmod 700 "$INSTALL_DIR/harbor-whip-gateway"
 fi
 
 plutil -create xml1 "$PLIST"
@@ -136,7 +191,10 @@ launchctl bootstrap "$DOMAIN" "$PLIST"
 
 api_ready=false
 for _ in {1..30}; do
-  if curl -fsS --max-time 2 http://127.0.0.1:1984/ >/dev/null; then
+  gateway_status="$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' \
+    -X POST 'http://127.0.0.1:1984/api/webrtc' || true)"
+  if curl -fsS --max-time 2 http://127.0.0.1:1985/api/streams >/dev/null &&
+     [ "$gateway_status" = "401" ]; then
     api_ready=true
     break
   fi
@@ -146,7 +204,7 @@ done
 if [ "$api_ready" = true ]; then
   echo "Harbor HomeKit is running and will start automatically at login."
 else
-  echo "The service was installed, but go2rtc is not responding on port 1984." >&2
+  echo "The service was installed, but its local services are not responding." >&2
   echo "Check: $LOG_DIR/go2rtc.error.log" >&2
   exit 1
 fi
@@ -165,5 +223,12 @@ formatted_pin="${homekit_pin:0:3}-${homekit_pin:3:2}-${homekit_pin:5:3}"
 echo
 echo "HomeKit setup code: $formatted_pin"
 echo "Keep this code private. It is preserved across service reinstalls."
+if [ -f "$INSTALL_DIR/.harbor-whip-token" ]; then
+  ingest_token="$(tr -d '[:space:]' < "$INSTALL_DIR/.harbor-whip-token")"
+  echo
+  echo "Harbor camera WHIP endpoint:"
+  echo "http://BRIDGE_IP:1984/api/webrtc?dst=${stream_name:-CAMERA_SERIAL}&token=$ingest_token"
+  echo "Replace BRIDGE_IP with this Mac's LAN IP. Treat this URL as a password."
+fi
 echo "Status: launchctl print $DOMAIN/$LABEL"
 echo "Logs:   $LOG_DIR"
