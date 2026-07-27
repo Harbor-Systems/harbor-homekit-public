@@ -11,6 +11,11 @@ TARGET_ARCH="${2:-$(go env GOARCH)}"
 OUTPUT="${3:-$ROOT_DIR/go2rtc}"
 BUILD_DIR="$(mktemp -d)"
 
+case "$OUTPUT" in
+  /*) ;;
+  *) OUTPUT="$ROOT_DIR/$OUTPUT" ;;
+esac
+
 cleanup() {
   rm -rf "$BUILD_DIR"
 }
