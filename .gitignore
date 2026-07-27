@@ -1,0 +1,5 @@
+# Native binary downloaded by run-native.sh
+/go2rtc
+/go2rtc.exe
+/dist/
+.DS_Store

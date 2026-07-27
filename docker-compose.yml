@@ -1,0 +1,15 @@
+# Run go2rtc in Docker — LINUX HOSTS ONLY.
+#
+# This does NOT work on macOS: Docker Desktop runs in a VM, so host networking
+# never reaches your LAN — the UI is unreachable and HomeKit's mDNS can't find
+# your phone. On macOS, run the native binary instead:  ./run-native.sh
+#
+# host networking is required so HomeKit's mDNS advertisement reaches the LAN.
+services:
+  go2rtc:
+    image: alexxit/go2rtc:1.9.14
+    container_name: go2rtc
+    network_mode: host            # required for HomeKit mDNS (Linux only)
+    restart: unless-stopped
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml

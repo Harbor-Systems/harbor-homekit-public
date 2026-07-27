@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: shellcheck ./*.sh ./scripts/*.sh ./tests/*.sh
+      - name: Repository tests
+        run: ./tests/test-repository.sh
+
+  patched-build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: false
+      - name: Build patched Apple Silicon binary
+        run: ./scripts/build-go2rtc.sh darwin arm64 "$RUNNER_TEMP/go2rtc"
+      - name: Inspect binary
+        run: |
+          file "$RUNNER_TEMP/go2rtc"
+          "$RUNNER_TEMP/go2rtc" -version

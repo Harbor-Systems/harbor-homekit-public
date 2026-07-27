@@ -1,0 +1,42 @@
+name: Monitor upstream go2rtc
+
+on:
+  schedule:
+    - cron: "17 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check pinned release and patch status
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/versions.env
+          latest="$(gh api repos/AlexxIT/go2rtc/releases/latest --jq .tag_name)"
+          patch_state="$(gh api repos/AlexxIT/go2rtc/pulls/1283 --jq .state)"
+
+          message=""
+          if [ "$latest" != "$GO2RTC_TAG" ]; then
+            message="Pinned go2rtc is $GO2RTC_TAG; upstream latest is $latest."
+          fi
+          if [ "$patch_state" != "open" ]; then
+            message="${message}"$'\n'"Upstream mDNS PR #1283 is now $patch_state; review whether Harbor's patch is still required."
+          fi
+
+          if [ -n "$message" ]; then
+            existing="$(gh issue list --state open --search \
+              '"Review upstream go2rtc update" in:title' --json number --jq 'length')"
+            if [ "$existing" = "0" ]; then
+              gh issue create --title "Review upstream go2rtc update" \
+                --body "$message"
+            fi
+          fi

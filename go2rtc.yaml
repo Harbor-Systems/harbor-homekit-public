@@ -1,0 +1,22 @@
+# go2rtc — Harbor camera (WHIP ingest) -> Apple HomeKit
+# WHIP docs: https://github.com/Harbor-Systems/harbor-python#whip-endpoint
+#
+# The camera publishes to:
+#   http://<HOST-IP>:1984/api/webrtc?dst=CAMERA_SERIAL
+# so the stream name below MUST equal the camera serial.
+#
+# Defaults used (no need to set them): api :1984, webrtc :8555.
+
+streams:
+  # The camera pushes into this stream via WHIP as H265 + OPUS.
+  # HomeKit only supports H264 + OPUS, so we must transcode the video:
+  #   #video=h264  -> transcode H265 video to H264 (required for HomeKit)
+  #   #audio=opus  -> keep OPUS audio (copied, since it already matches)
+  # Add #hardware for GPU-accelerated encoding if CPU use is too high.
+  "CAMERA_SERIAL":
+    - ffmpeg:CAMERA_SERIAL#video=h264#audio=opus
+
+homekit:
+  "CAMERA_SERIAL":
+    pin: GENERATE        # install-macos-service.sh replaces this with a unique PIN
+    name: Harbor Camera

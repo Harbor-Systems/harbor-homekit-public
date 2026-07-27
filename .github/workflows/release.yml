@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: false
+      - name: Build release binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ./scripts/build-go2rtc.sh darwin arm64 dist/go2rtc-mac-arm64
+          ./scripts/build-go2rtc.sh darwin amd64 dist/go2rtc-mac-amd64
+          ./scripts/build-go2rtc.sh linux arm64 dist/go2rtc-linux-arm64
+          ./scripts/build-go2rtc.sh linux amd64 dist/go2rtc-linux-amd64
+      - name: Optionally sign macOS binaries
+        if: ${{ env.APPLE_CERTIFICATE_P12 != '' }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/harbor-signing.keychain-db"
+          certificate="$RUNNER_TEMP/certificate.p12"
+          printf '%s' "$APPLE_CERTIFICATE_P12" | base64 -D > "$certificate"
+          security create-keychain -p temporary "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p temporary "$keychain"
+          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain"
+          security list-keychain -d user -s "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k temporary "$keychain"
+          for binary in dist/go2rtc-mac-*; do
+            codesign --force --options runtime --timestamp \
+              --sign "$APPLE_SIGNING_IDENTITY" "$binary"
+            codesign --verify --strict --verbose=2 "$binary"
+          done
+      - name: Package archives
+        run: |
+          set -euo pipefail
+          for platform in mac_arm64 mac_amd64 linux_arm64 linux_amd64; do
+            package_dir="$RUNNER_TEMP/$platform"
+            mkdir -p "$package_dir"
+            binary_platform="${platform/_/-}"
+            cp "dist/go2rtc-$binary_platform" "$package_dir/go2rtc"
+            (
+              cd "$package_dir"
+              zip -q "$GITHUB_WORKSPACE/dist/harbor-homekit-go2rtc_${platform}.zip" go2rtc
+            )
+          done
+      - name: Optionally notarize macOS archives
+        if: ${{ env.APPLE_ID != '' && env.APPLE_APP_PASSWORD != '' && env.APPLE_TEAM_ID != '' }}
+        run: |
+          set -euo pipefail
+          for archive in dist/harbor-homekit-go2rtc_mac_*.zip; do
+            xcrun notarytool submit "$archive" --wait \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID"
+          done
+      - name: Generate checksums
+        run: |
+          cd dist
+          shasum -a 256 harbor-homekit-go2rtc_*.zip > checksums.txt
+      - name: Publish GitHub release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Harbor HomeKit $GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/harbor-homekit-go2rtc_*.zip \
+            dist/checksums.txt

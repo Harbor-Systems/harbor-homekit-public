@@ -1,0 +1,21 @@
+diff --git a/pkg/mdns/client.go b/pkg/mdns/client.go
+index e7abb50..cc9bcd2 100644
+--- a/pkg/mdns/client.go
++++ b/pkg/mdns/client.go
+@@ -199,7 +199,15 @@ func (b *Browser) ListenMulticastUDP() error {
+ 	}
+ 
+ 	if b.Sends == nil {
+-		return errors.New("no interfaces for listen")
++		// macOS Bonjour may already own UDP 5353 on every concrete interface.
++		// Fall back to the system-selected multicast interface instead of
++		// disabling HomeKit discovery. Adapted from upstream PR #1283.
++		conn, err := net.ListenMulticastUDP("udp4", nil, MulticastAddr)
++		if err != nil {
++			return errors.New("no interfaces for listen and fallback failed: " + err.Error())
++		}
++		b.Nets = append(b.Nets, nets...)
++		b.Sends = append(b.Sends, conn)
+ 	}
+ 
+ 	// 3. Create receiver
