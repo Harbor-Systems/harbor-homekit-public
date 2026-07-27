@@ -19,6 +19,7 @@ RELEASE="${HARBOR_HOMEKIT_RELEASE_OVERRIDE:-$HARBOR_HOMEKIT_RELEASE}"
 
 if ! grep -Fq 'listen: "127.0.0.1:1985"' go2rtc.yaml ||
    ! grep -Fq 'listen: "127.0.0.1:8554"' go2rtc.yaml ||
+   ! grep -Fq 'allow_paths: [/api/streams, /api/webrtc]' go2rtc.yaml ||
    ! grep -Fq 'allow_paths: [ffmpeg]' go2rtc.yaml; then
   echo "go2rtc.yaml does not contain Harbor's required security settings." >&2
   echo "Merge the hardened blocks from the repository template before running." >&2

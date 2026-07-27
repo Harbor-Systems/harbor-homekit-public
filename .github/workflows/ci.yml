@@ -22,9 +22,13 @@ jobs:
       - name: Repository tests
         run: ./tests/test-repository.sh
       - name: Gateway tests
-        run: go test ./...
+        run: |
+          go test -race ./...
+          go vet ./...
       - name: Build Linux container
-        run: docker build .
+        run: |
+          docker compose config --quiet
+          docker build .
 
   patched-build:
     runs-on: macos-14

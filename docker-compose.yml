@@ -10,6 +10,7 @@ services:
     build:
       context: .
     container_name: harbor-homekit
+    user: "${HARBOR_UID:-1000}:${HARBOR_GID:-1000}"
     network_mode: host            # required for HomeKit mDNS (Linux only)
     restart: unless-stopped
     volumes:

@@ -95,12 +95,16 @@ Install Docker, then run:
 ```bash
 ./generate-homekit-pin.sh
 chmod 600 go2rtc.yaml
+mkdir -p .harbor-data
+chmod 700 .harbor-data
 docker compose up -d
 ```
 
 Docker host networking is required for HomeKit's mDNS advertisement. The
 compose configuration is Linux-only. It builds the restricted WHIP gateway and
-stores its generated token in `.harbor-data/whip-token`.
+stores its generated token in `.harbor-data/whip-token`. The container runs as
+the unprivileged UID/GID `1000:1000`. If the Linux account uses different IDs,
+set `HARBOR_UID` and `HARBOR_GID` before running Compose.
 
 ## Point Harbor at the bridge
 

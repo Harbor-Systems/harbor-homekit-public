@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ type gateway struct {
 	httpClient *http.Client
 }
 
+// main validates configuration and serves the restricted WHIP endpoint.
 func main() {
 	cfg, err := configFromEnvironment()
 	if err != nil {
@@ -70,6 +72,7 @@ func main() {
 	}
 }
 
+// config contains the gateway's validated runtime settings.
 type config struct {
 	listen   string
 	token    string
@@ -78,6 +81,7 @@ type config struct {
 	upstream *url.URL
 }
 
+// configFromEnvironment loads secrets and network settings without logging them.
 func configFromEnvironment() (*config, error) {
 	tokenFile := os.Getenv("HARBOR_WHIP_TOKEN_FILE")
 	if tokenFile == "" {
@@ -88,8 +92,8 @@ func configFromEnvironment() (*config, error) {
 		return nil, fmt.Errorf("read WHIP token: %w", err)
 	}
 	token := strings.TrimSpace(string(tokenBytes))
-	if len(token) < 32 {
-		return nil, errors.New("WHIP token must contain at least 32 characters")
+	if err := validateToken(token); err != nil {
+		return nil, err
 	}
 
 	stream := os.Getenv("HARBOR_WHIP_STREAM")
@@ -124,6 +128,19 @@ func configFromEnvironment() (*config, error) {
 	}, nil
 }
 
+// validateToken enforces the generator's canonical 256-bit hexadecimal format.
+func validateToken(token string) error {
+	if len(token) != 64 {
+		return errors.New("WHIP token must be 64 hexadecimal characters")
+	}
+	decoded, err := hex.DecodeString(token)
+	if err != nil || len(decoded) != 32 {
+		return errors.New("WHIP token must encode exactly 32 bytes")
+	}
+	return nil
+}
+
+// ServeHTTP rejects every request outside the authenticated WHIP surface.
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -152,6 +169,7 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// authorized compares a query or Bearer credential in constant time.
 func (g *gateway) authorized(r *http.Request) bool {
 	provided := r.URL.Query().Get("token")
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
@@ -161,6 +179,7 @@ func (g *gateway) authorized(r *http.Request) bool {
 		subtle.ConstantTimeCompare([]byte(provided), []byte(g.token)) == 1
 }
 
+// sourceAllowed optionally restricts publishing to one configured IP address.
 func (g *gateway) sourceAllowed(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
@@ -169,6 +188,7 @@ func (g *gateway) sourceAllowed(remoteAddr string) bool {
 	return g.sourceIP.Equal(net.ParseIP(host))
 }
 
+// handlePublish validates a publish request before forwarding its SDP.
 func (g *gateway) handlePublish(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	if query.Get("dst") != g.stream || hasUnexpectedQuery(query, "dst", "token") {
@@ -179,6 +199,7 @@ func (g *gateway) handlePublish(w http.ResponseWriter, r *http.Request) {
 	g.proxy(w, r, url.Values{"dst": []string{g.stream}})
 }
 
+// handleDelete validates cleanup for an established WHIP session.
 func (g *gateway) handleDelete(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	id := query.Get("id")
@@ -189,6 +210,7 @@ func (g *gateway) handleDelete(w http.ResponseWriter, r *http.Request) {
 	g.proxy(w, r, url.Values{"id": []string{id}})
 }
 
+// hasUnexpectedQuery rejects duplicated and non-allowlisted query parameters.
 func hasUnexpectedQuery(values url.Values, allowed ...string) bool {
 	set := make(map[string]bool, len(allowed))
 	for _, key := range allowed {
@@ -202,6 +224,7 @@ func hasUnexpectedQuery(values url.Values, allowed ...string) bool {
 	return false
 }
 
+// proxy forwards only the sanitized request and rewrites session locations.
 func (g *gateway) proxy(w http.ResponseWriter, incoming *http.Request, query url.Values) {
 	target := *g.upstream
 	target.Path = "/api/webrtc"

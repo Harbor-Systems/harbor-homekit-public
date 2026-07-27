@@ -11,6 +11,7 @@ import (
 
 const testToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
+// testGateway creates an isolated gateway and fake loopback upstream.
 func testGateway(t *testing.T, upstream http.Handler) (*gateway, *httptest.Server) {
 	t.Helper()
 	server := httptest.NewServer(upstream)
@@ -24,6 +25,7 @@ func testGateway(t *testing.T, upstream http.Handler) (*gateway, *httptest.Serve
 	}, server
 }
 
+// TestPublishForwardsOnlyExpectedRequest verifies sanitized WHIP forwarding.
 func TestPublishForwardsOnlyExpectedRequest(t *testing.T) {
 	var gotMethod, gotQuery, gotBody string
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +60,7 @@ func TestPublishForwardsOnlyExpectedRequest(t *testing.T) {
 	}
 }
 
+// TestRejectsUnauthenticatedAndExcessSurface verifies the default-deny boundary.
 func TestRejectsUnauthenticatedAndExcessSurface(t *testing.T) {
 	gateway, server := testGateway(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("rejected request reached upstream")
@@ -91,6 +94,7 @@ func TestRejectsUnauthenticatedAndExcessSurface(t *testing.T) {
 	}
 }
 
+// TestDeleteUsesAuthenticatedSession verifies safe session cleanup forwarding.
 func TestDeleteUsesAuthenticatedSession(t *testing.T) {
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete || r.URL.RawQuery != "id=session-1" {
@@ -107,5 +111,27 @@ func TestDeleteUsesAuthenticatedSession(t *testing.T) {
 	))
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("status = %d", response.Code)
+	}
+}
+
+// TestTokenFormat rejects credentials outside the generated canonical format.
+func TestTokenFormat(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		valid bool
+	}{
+		{"generated format", testToken, true},
+		{"predictable short text", strings.Repeat("a", 32), false},
+		{"non hexadecimal", strings.Repeat("g", 64), false},
+		{"too long", testToken + "00", false},
+		{"empty", "", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if valid := validateToken(test.token) == nil; valid != test.valid {
+				t.Fatalf("valid = %t, want %t", valid, test.valid)
+			}
+		})
 	}
 }
