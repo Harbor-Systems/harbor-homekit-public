@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2317 # Cleanup is invoked indirectly by signal traps.
 set -eu
 
 config="/config/go2rtc.yaml"

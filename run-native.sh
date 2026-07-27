@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Download and run the native go2rtc binary against ./go2rtc.yaml.
 # Recommended path on macOS, where Docker can't advertise HomeKit over mDNS.
+# shellcheck disable=SC2317 # Cleanup is invoked indirectly by signal traps.
 set -euo pipefail
 
 cd "$(dirname "$0")"
