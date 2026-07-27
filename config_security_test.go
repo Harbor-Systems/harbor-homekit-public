@@ -47,6 +47,22 @@ func TestGo2RTCConfigHasExactSecurityBoundary(t *testing.T) {
 	assertEqual(t, "app.modules", config.App.Modules, []string{
 		"api", "rtsp", "webrtc", "exec", "ffmpeg", "homekit",
 	})
+	if len(config.Streams) != 1 {
+		t.Fatalf("streams keys = %#v, want only CAMERA_SERIAL", config.Streams)
+	}
+	streamSources, ok := config.Streams["CAMERA_SERIAL"].([]any)
+	if !ok {
+		t.Fatalf("streams.CAMERA_SERIAL = %#v, want a source list", config.Streams["CAMERA_SERIAL"])
+	}
+	assertEqual(t, "streams.CAMERA_SERIAL", streamSources, []any{
+		"ffmpeg:CAMERA_SERIAL#video=h264#audio=opus",
+	})
+	if len(config.HomeKit) != 1 {
+		t.Fatalf("homekit keys = %#v, want only CAMERA_SERIAL", config.HomeKit)
+	}
+	if _, ok := config.HomeKit["CAMERA_SERIAL"]; !ok {
+		t.Fatal("homekit must contain CAMERA_SERIAL")
+	}
 }
 
 // assertEqual reports a named structural configuration mismatch.
