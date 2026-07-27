@@ -2,4 +2,6 @@
 /go2rtc
 /go2rtc.exe
 /dist/
+.harbor-data/
+.harbor-whip-token
 .DS_Store

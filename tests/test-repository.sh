@@ -8,8 +8,8 @@ for script in ./*.sh ./scripts/*.sh ./tests/*.sh; do
   bash -n "$script"
 done
 
-if [ "$(grep -o 'CAMERA_SERIAL' go2rtc.yaml | wc -l | tr -d ' ')" -ne 4 ]; then
-  echo "go2rtc.yaml must use CAMERA_SERIAL consistently in four places" >&2
+if [ "$(grep -o 'CAMERA_SERIAL' go2rtc.yaml | wc -l | tr -d ' ')" -ne 3 ]; then
+  echo "go2rtc.yaml must use CAMERA_SERIAL consistently in three places" >&2
   exit 1
 fi
 
@@ -28,5 +28,6 @@ if ! grep -q 'Project Monitor Inc.' LICENSE; then
   exit 1
 fi
 
+go test ./...
 ./tests/test-pin-generation.sh
 echo "Repository tests passed"
