@@ -42,7 +42,11 @@ if "$ROOT_DIR/generate-homekit-pin.sh" "$TEST_DIR/missing.yaml" >/dev/null 2>&1;
   exit 1
 fi
 
-mode="$(stat -f '%Lp' "$TEST_DIR/generated.yaml" 2>/dev/null || stat -c '%a' "$TEST_DIR/generated.yaml")"
+if [ "$(uname -s)" = "Darwin" ]; then
+  mode="$(stat -f '%Lp' "$TEST_DIR/generated.yaml")"
+else
+  mode="$(stat -c '%a' "$TEST_DIR/generated.yaml")"
+fi
 if [ "$mode" != "600" ]; then
   echo "Generated config mode is $mode, expected 600" >&2
   exit 1
