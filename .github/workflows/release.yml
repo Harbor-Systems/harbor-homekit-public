@@ -46,6 +46,12 @@ jobs:
           : "${APPLE_CERTIFICATE_P12:?APPLE_CERTIFICATE_P12 is required}"
           : "${APPLE_CERTIFICATE_PASSWORD:?APPLE_CERTIFICATE_PASSWORD is required}"
           : "${APPLE_SIGNING_IDENTITY:?APPLE_SIGNING_IDENTITY is required}"
+          expected_identity='Developer ID Application: Project Monitor, Inc. (TC395YUVC2)'
+          expected_team='TC395YUVC2'
+          if [ "$APPLE_SIGNING_IDENTITY" != "$expected_identity" ]; then
+            echo "APPLE_SIGNING_IDENTITY does not match Project Monitor's release identity." >&2
+            exit 1
+          fi
           keychain="$RUNNER_TEMP/harbor-signing.keychain-db"
           certificate="$RUNNER_TEMP/certificate.p12"
           printf '%s' "$APPLE_CERTIFICATE_P12" | base64 -D > "$certificate"
@@ -61,11 +67,17 @@ jobs:
             codesign --force --options runtime --timestamp \
               --sign "$APPLE_SIGNING_IDENTITY" "$binary"
             codesign --verify --strict --verbose=2 "$binary"
+            details="$(codesign -dv --verbose=4 "$binary" 2>&1)"
+            printf '%s\n' "$details" | grep -Fqx "Authority=$expected_identity"
+            printf '%s\n' "$details" | grep -Fqx "TeamIdentifier=$expected_team"
           done
           for binary in dist/gateway-mac-*; do
             codesign --force --options runtime --timestamp \
               --sign "$APPLE_SIGNING_IDENTITY" "$binary"
             codesign --verify --strict --verbose=2 "$binary"
+            details="$(codesign -dv --verbose=4 "$binary" 2>&1)"
+            printf '%s\n' "$details" | grep -Fqx "Authority=$expected_identity"
+            printf '%s\n' "$details" | grep -Fqx "TeamIdentifier=$expected_team"
           done
       - name: Package archives
         run: |
