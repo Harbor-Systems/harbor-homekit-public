@@ -105,6 +105,12 @@ Logs are stored in `~/Library/Logs/Harbor HomeKit`.
 
 ## Linux installation
 
+> [!WARNING]
+> The Linux installation is experimental and has not been tested end-to-end
+> with a Harbor camera and Apple Home. The supported, customer-tested setup
+> path is the macOS setup application. Use the Linux instructions only for
+> development or evaluation and expect troubleshooting.
+
 Install Docker, then run:
 
 ```bash
