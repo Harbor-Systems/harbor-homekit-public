@@ -1,6 +1,27 @@
 import AppKit
 import SwiftUI
 
+private enum HarborBrand {
+    static let primary = Color(red: 168 / 255, green: 94 / 255, blue: 138 / 255)
+    static let highlight = Color(red: 237 / 255, green: 244 / 255, blue: 249 / 255)
+}
+
+private struct HarborHeader: View {
+    private var logo: NSImage? {
+        guard let url = Bundle.main.url(forResource: "HarborLogo", withExtension: "svg") else { return nil }
+        return NSImage(contentsOf: url)
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            if let logo {
+                Image(nsImage: logo).resizable().scaledToFit().frame(width: 174, height: 42)
+            }
+            Text("HomeKit setup").font(.headline).foregroundStyle(.secondary)
+        }
+    }
+}
+
 @MainActor
 final class SetupModel: ObservableObject {
     enum Step { case camera, installing, harborApp, homeKit }
@@ -100,7 +121,8 @@ struct SetupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Harbor HomeKit Setup").font(.largeTitle).bold()
+            HarborHeader()
+            Divider()
             switch model.step {
             case .camera: cameraStep
             case .installing: installingStep
@@ -115,6 +137,8 @@ struct SetupView: View {
         }
         .padding(28)
         .frame(width: 620, height: 480)
+        .tint(HarborBrand.primary)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var cameraStep: some View {
@@ -149,7 +173,7 @@ struct SetupView: View {
                 Text("5. Wait a few seconds, then click Check Camera Connection.")
             }
             Text(model.endpoint).font(.system(.body, design: .monospaced))
-                .textSelection(.enabled).padding(10).background(.quaternary).cornerRadius(8)
+                .textSelection(.enabled).padding(10).background(HarborBrand.highlight.opacity(0.7)).cornerRadius(8)
             HStack {
                 Button("Copy WHIP Endpoint") { model.copy(model.endpoint) }
                 Button("Check Camera Connection") { model.verifyCamera() }

@@ -23,8 +23,8 @@ if grep -Eq 'releases/latest|GO2RTC_VERSION:-latest' run-native.sh; then
   exit 1
 fi
 
-if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.3.0" ]; then
-  echo "Native installer must use the signed and notarized v0.3.0 release" >&2
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.3.1" ]; then
+  echo "Native installer must use the signed and notarized v0.3.1 release" >&2
   exit 1
 fi
 
