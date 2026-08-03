@@ -33,7 +33,7 @@ if ! grep -Fq 'shasum -a 256 *.zip > checksums.txt' .github/workflows/release.ym
   exit 1
 fi
 
-if ! grep -Fq '$2 == asset || $2 == "./" asset' run-native.sh; then
+if ! grep -Fq "\$2 == asset || \$2 == \"./\" asset" run-native.sh; then
   echo "Native runner must accept both basename and legacy ./ checksum entries" >&2
   exit 1
 fi
