@@ -23,6 +23,30 @@ if grep -Eq 'releases/latest|GO2RTC_VERSION:-latest' run-native.sh; then
   exit 1
 fi
 
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.2.1" ]; then
+  echo "Native installer must use the signed and notarized v0.2.1 release" >&2
+  exit 1
+fi
+
+if grep -R -Eq 'uses:[[:space:]]+[^[:space:]]+@v[0-9]+' .github/workflows; then
+  echo "GitHub Actions must be pinned to immutable commit SHAs" >&2
+  exit 1
+fi
+
+if grep -Eq 'Optionally (sign|notarize)|if:.*APPLE_' .github/workflows/release.yml; then
+  echo "macOS release signing and notarization must fail closed" >&2
+  exit 1
+fi
+
+for expected in \
+  'Developer ID Application: Project Monitor, Inc. (TC395YUVC2)' \
+  "TeamIdentifier=\$EXPECTED_APPLE_TEAM"; do
+  if ! grep -Fq "$expected" run-native.sh; then
+    echo "Native runner is missing Apple signature verification: $expected" >&2
+    exit 1
+  fi
+done
+
 if ! grep -q 'Project Monitor Inc.' LICENSE; then
   echo "MIT license copyright holder is missing" >&2
   exit 1
