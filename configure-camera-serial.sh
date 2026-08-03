@@ -42,7 +42,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-CAMERA_SERIAL_VALUE="$CAMERA_SERIAL" perl -pe '
+LC_ALL=C CAMERA_SERIAL_VALUE="$CAMERA_SERIAL" perl -pe '
   if (!/^[[:space:]]*#/) {
     s/\bCAMERA_SERIAL\b/$ENV{CAMERA_SERIAL_VALUE}/g;
   }
