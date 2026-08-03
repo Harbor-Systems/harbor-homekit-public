@@ -66,9 +66,9 @@ if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
   echo "Downloading Harbor's pinned go2rtc build ($RELEASE)..."
-  curl -fL "$base_url/$asset" -o "$tmp/$asset"
-  curl -fL "$base_url/checksums.txt" -o "$tmp/checksums.txt"
-  expected_line="$(grep "  $asset\$" "$tmp/checksums.txt" || true)"
+  curl -fsSL "$base_url/$asset" -o "$tmp/$asset"
+  curl -fsSL "$base_url/checksums.txt" -o "$tmp/checksums.txt"
+  expected_line="$(awk -v asset="$asset" '$2 == asset || $2 == "./" asset { print; exit }' "$tmp/checksums.txt")"
   if [ -z "$expected_line" ]; then
     echo "No checksum found for $asset" >&2
     exit 1
