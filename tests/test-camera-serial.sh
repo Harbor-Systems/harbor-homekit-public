@@ -10,11 +10,22 @@ cleanup() {
 trap cleanup EXIT
 
 cp "$ROOT_DIR/go2rtc.yaml" "$TEST_DIR/configured.yaml"
+cat >> "$TEST_DIR/configured.yaml" <<'YAML'
+# CAMERA_SERIAL remains a documented placeholder in this comment.
+camera_serial_backup: CAMERA_SERIAL_SUFFIX
+YAML
 "$ROOT_DIR/configure-camera-serial.sh" \
   "$TEST_DIR/configured.yaml" "2400000000" >/dev/null
 
-if grep -Ev '^[[:space:]]*#' "$TEST_DIR/configured.yaml" | grep -q CAMERA_SERIAL; then
+if grep -Ev '^[[:space:]]*#' "$TEST_DIR/configured.yaml" | \
+    grep -v CAMERA_SERIAL_SUFFIX | grep -q CAMERA_SERIAL; then
   echo "Camera placeholder remained after configuration" >&2
+  exit 1
+fi
+
+if ! grep -Fq '# CAMERA_SERIAL remains' "$TEST_DIR/configured.yaml" ||
+   ! grep -Fq 'camera_serial_backup: CAMERA_SERIAL_SUFFIX' "$TEST_DIR/configured.yaml"; then
+  echo "Camera configuration changed a comment or longer token" >&2
   exit 1
 fi
 

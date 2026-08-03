@@ -42,7 +42,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-sed "s/CAMERA_SERIAL/$CAMERA_SERIAL/g" "$CONFIG_PATH" > "$configured"
+CAMERA_SERIAL_VALUE="$CAMERA_SERIAL" perl -pe '
+  if (!/^[[:space:]]*#/) {
+    s/\bCAMERA_SERIAL\b/$ENV{CAMERA_SERIAL_VALUE}/g;
+  }
+' "$CONFIG_PATH" > "$configured"
 chmod 600 "$configured"
 mv "$configured" "$CONFIG_PATH"
 trap - EXIT
