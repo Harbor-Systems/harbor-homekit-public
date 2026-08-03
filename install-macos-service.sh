@@ -285,10 +285,21 @@ echo "HomeKit setup code: $formatted_pin"
 echo "Keep this code private. It is preserved across service reinstalls."
 if [ -f "$INSTALL_DIR/.harbor-whip-token" ]; then
   ingest_token="$(tr -d '[:space:]' < "$INSTALL_DIR/.harbor-whip-token")"
+  default_interface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
+  bridge_ip=""
+  if [ -n "$default_interface" ]; then
+    bridge_ip="$(ipconfig getifaddr "$default_interface" 2>/dev/null || true)"
+  fi
   echo
   echo "Harbor camera WHIP endpoint:"
-  echo "http://BRIDGE_IP:1984/api/webrtc?dst=${stream_name:-CAMERA_SERIAL}&token=$ingest_token"
-  echo "Replace BRIDGE_IP with this Mac's LAN IP. Treat this URL as a password."
+  if [ -n "$bridge_ip" ]; then
+    echo "http://$bridge_ip:1984/api/webrtc?dst=${stream_name:-CAMERA_SERIAL}&token=$ingest_token"
+  else
+    echo "Could not determine this Mac's LAN IP." >&2
+    echo "Replace BRIDGE_IP in the URL below with this Mac's LAN IP:" >&2
+    echo "http://BRIDGE_IP:1984/api/webrtc?dst=${stream_name:-CAMERA_SERIAL}&token=$ingest_token"
+  fi
+  echo "Treat this URL as a password."
 fi
 echo "Status: launchctl print $DOMAIN/$LABEL"
 echo "Logs:   $LOG_DIR"

@@ -9,6 +9,7 @@ cd "$(dirname "$0")"
 BIN="./go2rtc"
 GATEWAY_BIN="./harbor-whip-gateway"
 TOKEN_FILE="./.harbor-whip-token"
+STATUS_FILE="./.harbor-whip-connected"
 REPOSITORY="Harbor-Systems/harbor-homekit-public"
 # shellcheck disable=SC1091
 source ./scripts/versions.env
@@ -132,6 +133,7 @@ if [ ! -f "$TOKEN_FILE" ]; then
   od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]' > "$TOKEN_FILE"
 fi
 chmod 600 "$TOKEN_FILE"
+rm -f "$STATUS_FILE"
 
 go2rtc_pid=""
 gateway_pid=""
@@ -149,6 +151,7 @@ trap cleanup EXIT INT TERM
 go2rtc_pid="$!"
 HARBOR_WHIP_TOKEN_FILE="$TOKEN_FILE" \
 HARBOR_WHIP_STREAM="$stream_name" \
+HARBOR_WHIP_STATUS_FILE="$STATUS_FILE" \
 HARBOR_GO2RTC_URL="http://127.0.0.1:1985" \
   "$GATEWAY_BIN" &
 gateway_pid="$!"

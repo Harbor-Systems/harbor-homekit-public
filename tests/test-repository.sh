@@ -23,8 +23,8 @@ if grep -Eq 'releases/latest|GO2RTC_VERSION:-latest' run-native.sh; then
   exit 1
 fi
 
-if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.2.1" ]; then
-  echo "Native installer must use the signed and notarized v0.2.1 release" >&2
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.3.0" ]; then
+  echo "Native installer must use the signed and notarized v0.3.0 release" >&2
   exit 1
 fi
 
@@ -42,6 +42,16 @@ for required_provenance_text in \
   'actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661'; do
   if ! grep -Fq "$required_provenance_text" .github/workflows/release.yml; then
     echo "Release workflow is missing provenance control: $required_provenance_text" >&2
+    exit 1
+  fi
+done
+
+for setup_app_text in \
+  'scripts/build-macos-setup-app.sh' \
+  'dist/Harbor HomeKit Setup.app' \
+  'dist/Harbor-HomeKit-Setup.zip'; do
+  if ! grep -Fq "$setup_app_text" .github/workflows/release.yml; then
+    echo "Release workflow is missing setup application step: $setup_app_text" >&2
     exit 1
   fi
 done

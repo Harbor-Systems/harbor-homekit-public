@@ -48,3 +48,9 @@ jobs:
         run: |
           file "$RUNNER_TEMP/go2rtc"
           "$RUNNER_TEMP/go2rtc" -version
+      - name: Build setup application
+        run: |
+          ./scripts/build-macos-setup-app.sh "$RUNNER_TEMP/Harbor HomeKit Setup.app"
+          lipo -archs "$RUNNER_TEMP/Harbor HomeKit Setup.app/Contents/MacOS/Harbor HomeKit Setup" \
+            | grep -Fq 'x86_64 arm64'
+          plutil -lint "$RUNNER_TEMP/Harbor HomeKit Setup.app/Contents/Info.plist"

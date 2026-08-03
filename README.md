@@ -27,14 +27,24 @@ FileVault login screen.
 
 ## macOS installation
 
-Download this repository with **Code > Download ZIP**, open the ZIP, and open
-Terminal in the extracted folder. Then run:
+Download `Harbor-HomeKit-Setup.zip` from the latest release, open it, and run
+**Harbor HomeKit Setup**. The setup wizard:
+
+1. asks for the camera serial number;
+2. installs and starts the always-on bridge;
+3. displays a copyable, authenticated WHIP endpoint and shows where to paste it
+   in the Harbor app;
+4. confirms the camera has connected; and
+5. displays the private HomeKit setup code and Apple Home instructions.
+
+For support or command-line installation, download the repository source and
+run:
 
 ```bash
 ./install-macos-service.sh
 ```
 
-The installer asks for the Harbor camera serial number and applies it
+The command-line installer asks for the Harbor camera serial number and applies it
 consistently throughout the configuration. Leave `pin: GENERATE` unchanged;
 setup creates a unique HomeKit code and preserves it across updates.
 
