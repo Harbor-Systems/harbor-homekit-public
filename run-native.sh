@@ -4,6 +4,18 @@
 # shellcheck disable=SC2317 # Cleanup is invoked indirectly by signal traps.
 set -euo pipefail
 
+select_checksum_line() {
+  manifest="$1"
+  archive="$2"
+  awk -v asset="$archive" '$2 == asset || $2 == "./" asset { print; exit }' "$manifest"
+}
+
+# Internal test hook: exercise the exact manifest parser without starting the bridge.
+if [ "${HARBOR_CHECKSUM_LOOKUP_ONLY:-0}" = "1" ]; then
+  select_checksum_line "$1" "$2"
+  exit
+fi
+
 cd "$(dirname "$0")"
 
 BIN="./go2rtc"
@@ -68,7 +80,7 @@ if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
   echo "Downloading Harbor's pinned go2rtc build ($RELEASE)..."
   curl -fsSL "$base_url/$asset" -o "$tmp/$asset"
   curl -fsSL "$base_url/checksums.txt" -o "$tmp/checksums.txt"
-  expected_line="$(awk -v asset="$asset" '$2 == asset || $2 == "./" asset { print; exit }' "$tmp/checksums.txt")"
+  expected_line="$(select_checksum_line "$tmp/checksums.txt" "$asset")"
   if [ -z "$expected_line" ]; then
     echo "No checksum found for $asset" >&2
     exit 1

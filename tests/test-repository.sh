@@ -28,13 +28,8 @@ if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" !=
   exit 1
 fi
 
-if ! grep -Fq 'shasum -a 256 *.zip > checksums.txt' .github/workflows/release.yml; then
+if ! grep -Fq 'shasum -a 256 -- *.zip > checksums.txt' .github/workflows/release.yml; then
   echo "Release checksums must use archive basenames" >&2
-  exit 1
-fi
-
-if ! grep -Fq "\$2 == asset || \$2 == \"./\" asset" run-native.sh; then
-  echo "Native runner must accept both basename and legacy ./ checksum entries" >&2
   exit 1
 fi
 
@@ -110,4 +105,5 @@ fi
 go test ./...
 ./tests/test-pin-generation.sh
 ./tests/test-camera-serial.sh
+./tests/test-checksum-manifest.sh
 echo "Repository tests passed"
