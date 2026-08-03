@@ -191,6 +191,14 @@ The native runner verifies the exact identity
 `Developer ID Application: Project Monitor, Inc. (TC395YUVC2)` and Team ID
 `TC395YUVC2` before executing downloaded macOS binaries.
 
+GitHub also publishes signed build-provenance attestations for every archive
+and `checksums.txt`. They can be verified independently with GitHub CLI:
+
+```bash
+gh attestation verify harbor-homekit-go2rtc_mac_arm64.zip \
+  --repo Harbor-Systems/harbor-homekit-public
+```
+
 ## License
 
 Copyright © 2026 Project Monitor Inc. Released under the [MIT License](LICENSE).

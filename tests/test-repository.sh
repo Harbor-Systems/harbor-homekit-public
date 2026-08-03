@@ -34,6 +34,23 @@ if grep -R -nE '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[^[:space:]@]+@[^[:s
   exit 1
 fi
 
+for required_provenance_text in \
+  'environment: release' \
+  'id-token: write' \
+  'attestations: write' \
+  'name: Attest release provenance' \
+  'actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661'; do
+  if ! grep -Fq "$required_provenance_text" .github/workflows/release.yml; then
+    echo "Release workflow is missing provenance control: $required_provenance_text" >&2
+    exit 1
+  fi
+done
+
+if [ "$(grep -Ec '^FROM [^ ]+@sha256:[0-9a-f]{64}([[:space:]]|$)' Dockerfile)" -ne 2 ]; then
+  echo "Every Docker build stage must use an immutable image digest" >&2
+  exit 1
+fi
+
 for required_release_text in \
   'name: Sign macOS binaries' \
   'codesign --force --options runtime --timestamp' \

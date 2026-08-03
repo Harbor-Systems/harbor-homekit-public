@@ -7,10 +7,13 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     runs-on: macos-14
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -114,6 +117,12 @@ jobs:
         run: |
           cd dist
           shasum -a 256 harbor-homekit-go2rtc_*.zip > checksums.txt
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: |
+            dist/harbor-homekit-go2rtc_*.zip
+            dist/checksums.txt
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
