@@ -251,9 +251,9 @@ launchctl bootstrap "$DOMAIN" "$PLIST"
 
 api_ready=false
 for _ in {1..30}; do
-  gateway_status="$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' \
+  gateway_status="$(curl -s --max-time 2 -o /dev/null -w '%{http_code}' \
     -X POST 'http://127.0.0.1:1984/api/webrtc' || true)"
-  if curl -fsS --max-time 2 http://127.0.0.1:1985/api/streams >/dev/null &&
+  if curl -fs --max-time 2 http://127.0.0.1:1985/api/streams >/dev/null 2>&1 &&
      [ "$gateway_status" = "401" ]; then
     api_ready=true
     break
