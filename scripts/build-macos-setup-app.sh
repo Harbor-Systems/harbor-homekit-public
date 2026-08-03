@@ -27,18 +27,19 @@ cp "$root/configure-camera-serial.sh" "$contents/Resources/installer/"
 cp "$root/generate-homekit-pin.sh" "$contents/Resources/installer/"
 cp "$root/run-native.sh" "$contents/Resources/installer/"
 cp "$root/go2rtc.yaml" "$contents/Resources/installer/"
-cp "$root/macos/HarborMark.svg" "$contents/Resources/"
 cp "$root/macos/HarborLogo.svg" "$contents/Resources/"
 mkdir -p "$contents/Resources/installer/scripts"
 cp "$root/scripts/versions.env" "$contents/Resources/installer/scripts/"
 
 iconset="$build_dir/HarborHomeKit.iconset"
+icon_source="$build_dir/HarborAppIcon.png"
+base64 -D < "$root/macos/HarborAppIcon.png.b64" > "$icon_source"
 mkdir -p "$iconset"
 for points in 16 32 128 256 512; do
-  sips -s format png -z "$points" "$points" "$root/macos/HarborMark.svg" \
+  sips -s format png -z "$points" "$points" "$icon_source" \
     --out "$iconset/icon_${points}x${points}.png" >/dev/null
   pixels="$((points * 2))"
-  sips -s format png -z "$pixels" "$pixels" "$root/macos/HarborMark.svg" \
+  sips -s format png -z "$pixels" "$pixels" "$icon_source" \
     --out "$iconset/icon_${points}x${points}@2x.png" >/dev/null
 done
 iconutil -c icns "$iconset" -o "$contents/Resources/HarborHomeKit.icns"
