@@ -30,4 +30,5 @@ fi
 
 go test ./...
 ./tests/test-pin-generation.sh
+./tests/test-camera-serial.sh
 echo "Repository tests passed"

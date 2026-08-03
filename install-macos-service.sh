@@ -8,8 +8,51 @@ LABEL="co.harbor.homekit"
 INSTALL_DIR="$HOME/Library/Application Support/Harbor HomeKit"
 LOG_DIR="$HOME/Library/Logs/Harbor HomeKit"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-CONFIG_SOURCE="${1:-./go2rtc.yaml}"
+CONFIG_SOURCE="./go2rtc.yaml"
+CONFIG_SOURCE_SET=false
+CAMERA_SERIAL=""
 DOMAIN="gui/$(id -u)"
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 [--camera-serial SERIAL] [path/to/go2rtc.yaml]
+
+If the config still contains CAMERA_SERIAL, the installer prompts for it.
+Use --camera-serial for noninteractive installation.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --camera-serial)
+      if [ "$#" -lt 2 ]; then
+        usage
+        exit 1
+      fi
+      CAMERA_SERIAL="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+    *)
+      if [ "$CONFIG_SOURCE_SET" = true ]; then
+        echo "Only one config path may be provided." >&2
+        usage
+        exit 1
+      fi
+      CONFIG_SOURCE="$1"
+      CONFIG_SOURCE_SET=true
+      shift
+      ;;
+  esac
+done
 
 is_valid_pin() {
   case "$1" in
@@ -46,12 +89,7 @@ fi
 
 if [ ! -f "$CONFIG_SOURCE" ]; then
   echo "Config not found: $CONFIG_SOURCE" >&2
-  echo "Usage: $0 [path/to/go2rtc.yaml]" >&2
-  exit 1
-fi
-
-if grep -Ev '^[[:space:]]*#' "$CONFIG_SOURCE" | grep -q 'CAMERA_SERIAL'; then
-  echo "Configure the camera serial in $CONFIG_SOURCE before installing." >&2
+  usage
   exit 1
 fi
 
@@ -83,6 +121,28 @@ config_base="$CONFIG_SOURCE"
 if [ -f "$INSTALL_DIR/go2rtc.yaml" ] && \
     grep -Eq '^[[:space:]]+pairings:' "$INSTALL_DIR/go2rtc.yaml"; then
   config_base="$INSTALL_DIR/go2rtc.yaml"
+fi
+
+# Render the downloaded template into a temporary config. This keeps the
+# customer's source checkout unchanged and avoids prompting during upgrades of
+# an already-paired bridge.
+rendered_config=""
+cleanup_rendered_config() {
+  if [ -n "$rendered_config" ]; then
+    rm -f "$rendered_config"
+  fi
+}
+trap cleanup_rendered_config EXIT
+if grep -Ev '^[[:space:]]*#' "$config_base" | grep -q 'CAMERA_SERIAL'; then
+  rendered_config="$(mktemp "${TMPDIR:-/tmp}/harbor-homekit-config.XXXXXX")"
+  ditto "$config_base" "$rendered_config"
+  ./configure-camera-serial.sh "$rendered_config" "$CAMERA_SERIAL"
+  config_base="$rendered_config"
+fi
+
+if grep -Ev '^[[:space:]]*#' "$config_base" | grep -q 'CAMERA_SERIAL'; then
+  echo "The camera serial could not be configured." >&2
+  exit 1
 fi
 
 if [ "$config_base" != "$INSTALL_DIR/go2rtc.yaml" ]; then

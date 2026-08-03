@@ -25,10 +25,26 @@ Harbor camera ──authenticated WHIP──► narrow gateway ──localhost�
 On macOS, the bridge starts after the user logs in. It does not run at the
 FileVault login screen.
 
-## Configure the camera
+## macOS installation
 
-Edit `go2rtc.yaml` and replace every `CAMERA_SERIAL` value with the camera's
-serial number:
+Download this repository with **Code > Download ZIP**, open the ZIP, and open
+Terminal in the extracted folder. Then run:
+
+```bash
+./install-macos-service.sh
+```
+
+The installer asks for the Harbor camera serial number and applies it
+consistently throughout the configuration. Leave `pin: GENERATE` unchanged;
+setup creates a unique HomeKit code and preserves it across updates.
+
+For support or automated deployment, the prompt can be skipped:
+
+```bash
+./install-macos-service.sh --camera-serial 2400000000
+```
+
+The resulting camera configuration is equivalent to:
 
 ```yaml
 streams:
@@ -39,17 +55,6 @@ homekit:
   "2400000000":
     pin: GENERATE
     name: Harbor Camera
-```
-
-Leave `pin: GENERATE` unchanged. Setup creates a unique HomeKit code and
-preserves it across updates.
-
-## macOS installation
-
-Run:
-
-```bash
-./install-macos-service.sh
 ```
 
 The installer:
