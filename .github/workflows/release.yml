@@ -39,6 +39,7 @@ jobs:
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-mac-amd64 ./cmd/whip-gateway
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-arm64 ./cmd/whip-gateway
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-amd64 ./cmd/whip-gateway
+          ./scripts/build-macos-setup-app.sh "dist/Harbor HomeKit Setup.app"
       - name: Sign macOS binaries
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
@@ -82,6 +83,12 @@ jobs:
             printf '%s\n' "$details" | grep -Fqx "Authority=$expected_identity"
             printf '%s\n' "$details" | grep -Fqx "TeamIdentifier=$expected_team"
           done
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" "dist/Harbor HomeKit Setup.app"
+          codesign --verify --deep --strict --verbose=2 "dist/Harbor HomeKit Setup.app"
+          app_details="$(codesign -dv --verbose=4 "dist/Harbor HomeKit Setup.app" 2>&1)"
+          printf '%s\n' "$app_details" | grep -Fqx "Authority=$expected_identity"
+          printf '%s\n' "$app_details" | grep -Fqx "TeamIdentifier=$expected_team"
       - name: Package archives
         run: |
           set -euo pipefail
@@ -97,6 +104,8 @@ jobs:
                 go2rtc harbor-whip-gateway
             )
           done
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/Harbor HomeKit Setup.app" "dist/Harbor-HomeKit-Setup.zip"
       - name: Notarize macOS archives
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -113,15 +122,20 @@ jobs:
               --password "$APPLE_APP_PASSWORD" \
               --team-id "$APPLE_TEAM_ID"
           done
+          xcrun notarytool submit "dist/Harbor-HomeKit-Setup.zip" --wait \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID"
       - name: Generate checksums
         run: |
           cd dist
-          shasum -a 256 harbor-homekit-go2rtc_*.zip > checksums.txt
+          shasum -a 256 ./*.zip > checksums.txt
       - name: Attest release provenance
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-path: |
             dist/harbor-homekit-go2rtc_*.zip
+            dist/Harbor-HomeKit-Setup.zip
             dist/checksums.txt
       - name: Publish GitHub release
         env:
@@ -131,4 +145,5 @@ jobs:
             --title "Harbor HomeKit $GITHUB_REF_NAME" \
             --generate-notes \
             dist/harbor-homekit-go2rtc_*.zip \
+            dist/Harbor-HomeKit-Setup.zip \
             dist/checksums.txt

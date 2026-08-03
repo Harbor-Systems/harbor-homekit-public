@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -23,6 +24,30 @@ func testGateway(t *testing.T, upstream http.Handler) (*gateway, *httptest.Serve
 		token: testToken, stream: "CAM123", upstream: target,
 		httpClient: server.Client(),
 	}, server
+}
+
+// TestSuccessfulPublishWritesPrivateStatusMarker gives the setup UI a local,
+// non-network signal that the Harbor camera completed a WHIP handshake.
+func TestSuccessfulPublishWritesPrivateStatusMarker(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	gateway, server := testGateway(t, upstream)
+	defer server.Close()
+	gateway.statusFile = t.TempDir() + "/connected"
+
+	response := httptest.NewRecorder()
+	gateway.ServeHTTP(response, httptest.NewRequest(
+		http.MethodPost, "/api/webrtc?dst=CAM123&token="+testToken,
+		strings.NewReader("offer"),
+	))
+	info, err := os.Stat(gateway.statusFile)
+	if err != nil {
+		t.Fatalf("status marker was not written: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("status marker permissions = %o, want 600", info.Mode().Perm())
+	}
 }
 
 // TestPublishForwardsOnlyExpectedRequest verifies sanitized WHIP forwarding.

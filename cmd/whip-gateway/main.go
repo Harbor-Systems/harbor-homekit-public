@@ -25,6 +25,7 @@ type gateway struct {
 	stream     string
 	sourceIP   net.IP
 	upstream   *url.URL
+	statusFile string
 	httpClient *http.Client
 }
 
@@ -36,10 +37,11 @@ func main() {
 	}
 
 	handler := &gateway{
-		token:    cfg.token,
-		stream:   cfg.stream,
-		sourceIP: cfg.sourceIP,
-		upstream: cfg.upstream,
+		token:      cfg.token,
+		stream:     cfg.stream,
+		sourceIP:   cfg.sourceIP,
+		upstream:   cfg.upstream,
+		statusFile: cfg.statusFile,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -74,11 +76,12 @@ func main() {
 
 // config contains the gateway's validated runtime settings.
 type config struct {
-	listen   string
-	token    string
-	stream   string
-	sourceIP net.IP
-	upstream *url.URL
+	listen     string
+	token      string
+	stream     string
+	sourceIP   net.IP
+	upstream   *url.URL
+	statusFile string
 }
 
 // configFromEnvironment loads secrets and network settings without logging them.
@@ -125,6 +128,7 @@ func configFromEnvironment() (*config, error) {
 	return &config{
 		listen: listen, token: token, stream: stream,
 		sourceIP: sourceIP, upstream: upstream,
+		statusFile: os.Getenv("HARBOR_WHIP_STATUS_FILE"),
 	}, nil
 }
 
@@ -268,6 +272,11 @@ func (g *gateway) proxy(w http.ResponseWriter, incoming *http.Request, query url
 	}
 
 	w.WriteHeader(response.StatusCode)
+	if incoming.Method == http.MethodPost && response.StatusCode >= 200 && response.StatusCode < 300 && g.statusFile != "" {
+		if err := os.WriteFile(g.statusFile, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+			log.Printf("WHIP status update failed: %v", err)
+		}
+	}
 	if _, err := io.Copy(w, io.LimitReader(response.Body, maxSDPBytes)); err != nil {
 		log.Printf("WHIP response copy failed: %v", err)
 	}
