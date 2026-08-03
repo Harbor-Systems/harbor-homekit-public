@@ -13,6 +13,25 @@ REPOSITORY="Harbor-Systems/harbor-homekit-public"
 # shellcheck disable=SC1091
 source ./scripts/versions.env
 RELEASE="${HARBOR_HOMEKIT_RELEASE_OVERRIDE:-$HARBOR_HOMEKIT_RELEASE}"
+EXPECTED_APPLE_AUTHORITY="Developer ID Application: Project Monitor, Inc. (TC395YUVC2)"
+EXPECTED_APPLE_TEAM="TC395YUVC2"
+
+verify_macos_binary() {
+  binary="$1"
+  details="$(codesign -dv --verbose=4 "$binary" 2>&1)" || {
+    echo "Invalid or missing Apple signature: $binary" >&2
+    return 1
+  }
+  codesign --verify --strict --verbose=2 "$binary"
+  printf '%s\n' "$details" | grep -Fqx "Authority=$EXPECTED_APPLE_AUTHORITY" || {
+    echo "Unexpected Apple signing identity: $binary" >&2
+    return 1
+  }
+  printf '%s\n' "$details" | grep -Fqx "TeamIdentifier=$EXPECTED_APPLE_TEAM" || {
+    echo "Unexpected Apple signing team: $binary" >&2
+    return 1
+  }
+}
 
 # Replace the template sentinel on first run and preserve the resulting PIN.
 ./generate-homekit-pin.sh ./go2rtc.yaml
@@ -64,9 +83,18 @@ if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
     exit 1
   fi
   unzip -oq "$tmp/$asset" -d "$tmp/unpacked"
+  if [ "$os_tag" = "mac" ]; then
+    verify_macos_binary "$tmp/unpacked/go2rtc"
+    verify_macos_binary "$tmp/unpacked/harbor-whip-gateway"
+  fi
   mv "$tmp/unpacked/go2rtc" "$BIN"
   mv "$tmp/unpacked/harbor-whip-gateway" "$GATEWAY_BIN"
   chmod +x "$BIN" "$GATEWAY_BIN"
+fi
+
+if [ "$os_tag" = "mac" ]; then
+  verify_macos_binary "$BIN"
+  verify_macos_binary "$GATEWAY_BIN"
 fi
 
 if [ ! -x "$GATEWAY_BIN" ]; then
