@@ -23,14 +23,12 @@ if grep -Eq 'releases/latest|GO2RTC_VERSION:-latest' run-native.sh; then
   exit 1
 fi
 
-for homekit_boundary_text in \
-  'homekit_listen: ":21063"'; do
-  for boundary_file in go2rtc.yaml run-native.sh; do
-    if ! grep -Fq "$homekit_boundary_text" "$boundary_file"; then
-      echo "$boundary_file is missing the HomeKit pairing listener boundary" >&2
-      exit 1
-    fi
-  done
+homekit_boundary_text='homekit_listen: ":21063"'
+for boundary_file in go2rtc.yaml run-native.sh; do
+  if ! grep -Fq "$homekit_boundary_text" "$boundary_file"; then
+    echo "$boundary_file is missing the HomeKit pairing listener boundary" >&2
+    exit 1
+  fi
 done
 
 if [ ! -s patches/go2rtc-1.9.14-homekit-lan-listener.patch ]; then
@@ -38,6 +36,7 @@ if [ ! -s patches/go2rtc-1.9.14-homekit-lan-listener.patch ]; then
   exit 1
 fi
 
+# shellcheck disable=SC2016 # literal grep pattern, not an expansion
 if ! grep -Fq 'for patch in "$ROOT_DIR"/patches/*.patch' scripts/build-go2rtc.sh; then
   echo "go2rtc build must apply every versioned patch" >&2
   exit 1
@@ -82,6 +81,7 @@ for setup_app_text in \
   fi
 done
 
+# shellcheck disable=SC2016 # literal grep pattern, not an expansion
 for dmg_layout_text in \
   'ln -s /Applications "$staging/Applications"' \
   'RenderDMGBackground.swift' \
