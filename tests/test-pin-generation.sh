@@ -14,7 +14,7 @@ first_output="$("$ROOT_DIR/generate-homekit-pin.sh" "$TEST_DIR/generated.yaml")"
 first_pin="$(awk '/^[[:space:]]+pin:/{print $2; exit}' "$TEST_DIR/generated.yaml")"
 
 if ! printf '%s\n' "$first_output" | grep -Eq \
-    'HomeKit setup code: [0-9]{3}-[0-9]{2}-[0-9]{3}'; then
+    'HomeKit setup code: [0-9]{4}-[0-9]{4}'; then
   echo "Generator did not print a formatted setup code" >&2
   exit 1
 fi

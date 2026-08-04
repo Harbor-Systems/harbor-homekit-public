@@ -1,6 +1,8 @@
 # Native binary downloaded by run-native.sh
 /go2rtc
 /go2rtc.exe
+# Locally built gateway binary (source: cmd/whip-gateway)
+/harbor-whip-gateway
 /dist/
 .harbor-data/
 .harbor-whip-token

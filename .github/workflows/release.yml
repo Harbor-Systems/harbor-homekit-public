@@ -90,8 +90,11 @@ jobs:
           printf '%s\n' "$app_details" | grep -Fqx "Authority=$expected_identity"
           printf '%s\n' "$app_details" | grep -Fqx "TeamIdentifier=$expected_team"
       - name: Package archives
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
+          : "${APPLE_SIGNING_IDENTITY:?APPLE_SIGNING_IDENTITY is required}"
           for platform in mac_arm64 mac_amd64 linux_arm64 linux_amd64; do
             package_dir="$RUNNER_TEMP/$platform"
             mkdir -p "$package_dir"
@@ -104,8 +107,11 @@ jobs:
                 go2rtc harbor-whip-gateway
             )
           done
-          ditto -c -k --sequesterRsrc --keepParent \
-            "dist/Harbor HomeKit Setup.app" "dist/Harbor-HomeKit-Setup.zip"
+          ./scripts/build-macos-setup-dmg.sh \
+            "dist/Harbor HomeKit Setup.app" "dist/Harbor-HomeKit-Setup.dmg"
+          codesign --force --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" "dist/Harbor-HomeKit-Setup.dmg"
+          codesign --verify --strict --verbose=2 "dist/Harbor-HomeKit-Setup.dmg"
       - name: Notarize macOS archives
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -122,20 +128,21 @@ jobs:
               --password "$APPLE_APP_PASSWORD" \
               --team-id "$APPLE_TEAM_ID"
           done
-          xcrun notarytool submit "dist/Harbor-HomeKit-Setup.zip" --wait \
+          xcrun notarytool submit "dist/Harbor-HomeKit-Setup.dmg" --wait \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID"
+          xcrun stapler staple "dist/Harbor-HomeKit-Setup.dmg"
       - name: Generate checksums
         run: |
           cd dist
-          shasum -a 256 -- *.zip > checksums.txt
+          shasum -a 256 -- *.zip *.dmg > checksums.txt
       - name: Attest release provenance
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-path: |
             dist/harbor-homekit-go2rtc_*.zip
-            dist/Harbor-HomeKit-Setup.zip
+            dist/Harbor-HomeKit-Setup.dmg
             dist/checksums.txt
       - name: Publish GitHub release
         env:
@@ -145,5 +152,5 @@ jobs:
             --title "Harbor HomeKit $GITHUB_REF_NAME" \
             --generate-notes \
             dist/harbor-homekit-go2rtc_*.zip \
-            dist/Harbor-HomeKit-Setup.zip \
+            dist/Harbor-HomeKit-Setup.dmg \
             dist/checksums.txt

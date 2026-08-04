@@ -182,6 +182,15 @@ if ! grep -Fq 'listen: "127.0.0.1:1985"' "$INSTALL_DIR/go2rtc.yaml" ||
   chmod 600 "$migrated_config"
   mv "$migrated_config" "$INSTALL_DIR/go2rtc.yaml"
 fi
+# Migrate pre-v0.4 configs: HomeKit needs the dedicated pairing listener and
+# the srtp module, added alongside the existing hardened blocks.
+if ! grep -Fq 'homekit_listen:' "$INSTALL_DIR/go2rtc.yaml"; then
+  sed -i '' 's/^  modules: \[api, rtsp, webrtc, exec, ffmpeg, homekit\]$/  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit, srtp]/' \
+    "$INSTALL_DIR/go2rtc.yaml"
+  printf '\n%s\n%s\n' \
+    '# Apple Home pairs over this dedicated listener; see repository go2rtc.yaml.' \
+    'homekit_listen: ":21063"' >> "$INSTALL_DIR/go2rtc.yaml"
+fi
 sed -i '' -E "s/^([[:space:]]+pin:).*/\\1 $homekit_pin        # unique PIN generated during installation/" "$INSTALL_DIR/go2rtc.yaml"
 written_pin="$(read_pin "$INSTALL_DIR/go2rtc.yaml")"
 if ! is_valid_pin "$written_pin" || [ "$written_pin" != "$homekit_pin" ]; then
@@ -241,13 +250,31 @@ chmod 600 "$PLIST"
 plutil -lint "$PLIST"
 
 launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+# bootout returns before launchd finishes tearing down a running service;
+# bootstrapping while the label still exists fails with an I/O error.
+for _ in {1..20}; do
+  if ! launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  echo "Could not stop the existing Harbor HomeKit service." >&2
+  exit 1
+fi
 log_stamp="$(date +%Y%m%d-%H%M%S)"
 for log_file in "$LOG_DIR/go2rtc.log" "$LOG_DIR/go2rtc.error.log"; do
   if [ -s "$log_file" ]; then
     mv "$log_file" "$log_file.$log_stamp"
   fi
 done
+# The setup app's Stop Bridge disables the service so it stays stopped across
+# logins; bootstrap fails on a disabled service, so installing re-enables it.
+launchctl enable "$DOMAIN/$LABEL"
 launchctl bootstrap "$DOMAIN" "$PLIST"
+# Background Task Management can defer a newly registered agent's RunAtLoad
+# spawn past the health check below; force the first launch.
+launchctl kickstart "$DOMAIN/$LABEL"
 
 api_ready=false
 for _ in {1..30}; do
@@ -279,7 +306,24 @@ if grep -q 'no interfaces for listen' "$LOG_DIR/go2rtc.error.log" "$LOG_DIR/go2r
 fi
 
 echo "HomeKit discovery started without an mDNS interface error."
-formatted_pin="${homekit_pin:0:3}-${homekit_pin:3:2}-${homekit_pin:5:3}"
+
+# macOS Local Network privacy can silently drop the bridge's mDNS multicast.
+# Browse briefly and warn when the accessory is not visible.
+mdns_browse_log="$(mktemp "${TMPDIR:-/tmp}/harbor-homekit-mdns.XXXXXX")"
+dns-sd -B _hap._tcp local. > "$mdns_browse_log" 2>&1 &
+mdns_browse_pid=$!
+sleep 4
+kill "$mdns_browse_pid" >/dev/null 2>&1 || true
+if ! sed -n '/Instance Name/,$p' "$mdns_browse_log" | grep -q '_hap._tcp'; then
+  echo >&2
+  echo "WARNING: no HomeKit accessory is visible on the network yet." >&2
+  echo "macOS may be blocking the bridge's Local Network access." >&2
+  echo "Open System Settings > Privacy & Security > Local Network, allow" >&2
+  echo "the bridge (listed as go2rtc or bash), then rerun this installer." >&2
+fi
+rm -f "$mdns_browse_log"
+# Grouped like the Home app's code-entry field (####-####).
+formatted_pin="${homekit_pin:0:4}-${homekit_pin:4:4}"
 echo
 echo "HomeKit setup code: $formatted_pin"
 echo "Keep this code private. It is preserved across service reinstalls."

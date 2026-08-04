@@ -49,5 +49,5 @@ if ! is_valid_pin "$pin"; then
 fi
 
 chmod 600 "$CONFIG"
-printf 'HomeKit setup code: %s-%s-%s\n' "${pin:0:3}" "${pin:3:2}" "${pin:5:3}"
+printf 'HomeKit setup code: %s-%s\n' "${pin:0:4}" "${pin:4:4}"
 echo "Keep this code private. Running this script again preserves it."

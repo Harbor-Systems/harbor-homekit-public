@@ -23,12 +23,32 @@ if grep -Eq 'releases/latest|GO2RTC_VERSION:-latest' run-native.sh; then
   exit 1
 fi
 
+for homekit_boundary_text in \
+  'homekit_listen: ":21063"'; do
+  for boundary_file in go2rtc.yaml run-native.sh; do
+    if ! grep -Fq "$homekit_boundary_text" "$boundary_file"; then
+      echo "$boundary_file is missing the HomeKit pairing listener boundary" >&2
+      exit 1
+    fi
+  done
+done
+
+if [ ! -s patches/go2rtc-1.9.14-homekit-lan-listener.patch ]; then
+  echo "The HomeKit LAN listener patch is missing" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'for patch in "$ROOT_DIR"/patches/*.patch' scripts/build-go2rtc.sh; then
+  echo "go2rtc build must apply every versioned patch" >&2
+  exit 1
+fi
+
 if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.3.2" ]; then
   echo "Native installer must use the signed and notarized v0.3.2 release" >&2
   exit 1
 fi
 
-if ! grep -Fq 'shasum -a 256 -- *.zip > checksums.txt' .github/workflows/release.yml; then
+if ! grep -Fq 'shasum -a 256 -- *.zip *.dmg > checksums.txt' .github/workflows/release.yml; then
   echo "Release checksums must use archive basenames" >&2
   exit 1
 fi
@@ -53,10 +73,21 @@ done
 
 for setup_app_text in \
   'scripts/build-macos-setup-app.sh' \
+  'scripts/build-macos-setup-dmg.sh' \
   'dist/Harbor HomeKit Setup.app' \
-  'dist/Harbor-HomeKit-Setup.zip'; do
+  'dist/Harbor-HomeKit-Setup.dmg'; do
   if ! grep -Fq "$setup_app_text" .github/workflows/release.yml; then
     echo "Release workflow is missing setup application step: $setup_app_text" >&2
+    exit 1
+  fi
+done
+
+for dmg_layout_text in \
+  'ln -s /Applications "$staging/Applications"' \
+  'RenderDMGBackground.swift' \
+  'set background picture of view_options'; do
+  if ! grep -Fq "$dmg_layout_text" scripts/build-macos-setup-dmg.sh; then
+    echo "Disk image script is missing drag-to-install layout: $dmg_layout_text" >&2
     exit 1
   fi
 done
@@ -70,7 +101,8 @@ for required_release_text in \
   'name: Sign macOS binaries' \
   'codesign --force --options runtime --timestamp' \
   'name: Notarize macOS archives' \
-  'xcrun notarytool submit'; do
+  'xcrun notarytool submit' \
+  'xcrun stapler staple "dist/Harbor-HomeKit-Setup.dmg"'; do
   if ! grep -Fq "$required_release_text" .github/workflows/release.yml; then
     echo "Release workflow is missing: $required_release_text" >&2
     exit 1

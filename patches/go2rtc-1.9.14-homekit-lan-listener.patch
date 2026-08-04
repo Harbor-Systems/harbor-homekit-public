@@ -1,0 +1,61 @@
+diff --git a/internal/homekit/homekit.go b/internal/homekit/homekit.go
+index 59b84b3..e9095dc 100644
+--- a/internal/homekit/homekit.go
++++ b/internal/homekit/homekit.go
+@@ -2,6 +2,7 @@ package homekit
+ 
+ import (
+ 	"errors"
++	"net"
+ 	"net/http"
+ 	"strings"
+ 
+@@ -19,7 +20,12 @@ import (
+ 
+ func Init() {
+ 	var cfg struct {
+-		Mod map[string]struct {
++		// Harbor patch: dedicated LAN listener for HomeKit pairing, so the
++		// go2rtc API can stay bound to localhost. Serves only the two HAP
++		// pairing paths; every post-pairing request rides the same TCP
++		// connection under HAP session encryption.
++		Listen string `yaml:"homekit_listen"`
++		Mod    map[string]struct {
+ 			Pin           string   `yaml:"pin"`
+ 			Name          string   `yaml:"name"`
+ 			DeviceID      string   `yaml:"device_id"`
+@@ -42,6 +48,25 @@ func Init() {
+ 		return
+ 	}
+ 
++	hapPort := api.Port
++	if cfg.Listen != "" {
++		ln, err := net.Listen("tcp4", cfg.Listen)
++		if err != nil {
++			log.Error().Err(err).Caller().Send()
++			return
++		}
++		hapPort = ln.Addr().(*net.TCPAddr).Port
++		mux := http.NewServeMux()
++		mux.HandleFunc(hap.PathPairSetup, hapHandler)
++		mux.HandleFunc(hap.PathPairVerify, hapHandler)
++		go func() {
++			if err := (&http.Server{Handler: mux}).Serve(ln); err != nil {
++				log.Error().Err(err).Caller().Send()
++			}
++		}()
++		log.Info().Msgf("[homekit] listen addr=%s", cfg.Listen)
++	}
++
+ 	hosts = map[string]*server{}
+ 	servers = map[string]*server{}
+ 	var entries []*mdns.ServiceEntry
+@@ -82,7 +107,7 @@ func Init() {
+ 
+ 		srv.mdns = &mdns.ServiceEntry{
+ 			Name: name,
+-			Port: uint16(api.Port),
++			Port: uint16(hapPort),
+ 			Info: map[string]string{
+ 				hap.TXTConfigNumber: "1",
+ 				hap.TXTFeatureFlags: "0",

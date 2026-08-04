@@ -31,8 +31,9 @@ func TestGo2RTCConfigHasExactSecurityBoundary(t *testing.T) {
 		Exec struct {
 			AllowPaths []string `yaml:"allow_paths"`
 		} `yaml:"exec"`
-		Streams map[string]any `yaml:"streams"`
-		HomeKit map[string]any `yaml:"homekit"`
+		Streams       map[string]any `yaml:"streams"`
+		HomeKit       map[string]any `yaml:"homekit"`
+		HomeKitListen string         `yaml:"homekit_listen"`
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -45,8 +46,9 @@ func TestGo2RTCConfigHasExactSecurityBoundary(t *testing.T) {
 	assertEqual(t, "api.allow_paths", config.API.AllowPaths, []string{"/api/streams", "/api/webrtc"})
 	assertEqual(t, "exec.allow_paths", config.Exec.AllowPaths, []string{"ffmpeg"})
 	assertEqual(t, "app.modules", config.App.Modules, []string{
-		"api", "rtsp", "webrtc", "exec", "ffmpeg", "homekit",
+		"api", "rtsp", "webrtc", "exec", "ffmpeg", "homekit", "srtp",
 	})
+	assertEqual(t, "homekit_listen", config.HomeKitListen, ":21063")
 	if len(config.Streams) != 1 {
 		t.Fatalf("streams keys = %#v, want only CAMERA_SERIAL", config.Streams)
 	}

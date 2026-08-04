@@ -30,8 +30,9 @@ if [ "$actual_commit" != "$GO2RTC_COMMIT" ]; then
   exit 1
 fi
 
-git -C "$BUILD_DIR/go2rtc" apply \
-  "$ROOT_DIR/patches/go2rtc-1.9.14-macos-mdns.patch"
+for patch in "$ROOT_DIR"/patches/*.patch; do
+  git -C "$BUILD_DIR/go2rtc" apply "$patch"
+done
 
 (
   cd "$BUILD_DIR/go2rtc"

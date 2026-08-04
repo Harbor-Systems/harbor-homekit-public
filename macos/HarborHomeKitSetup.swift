@@ -24,9 +24,172 @@ private struct HarborHeader: View {
 
 @MainActor
 final class SetupModel: ObservableObject {
-    enum Step { case camera, installing, harborApp, homeKit }
+    enum Step { case moveToApplications, camera, installing, harborApp, homeKit, bridge }
 
     @Published var step: Step = .camera
+    @Published var bridgeRunning = false
+    @Published var bridgeManaged = false
+    @Published var bridgeBusy = false
+    @Published var installedSetupCode = ""
+
+    // On a read-only volume (the mounted disk image, or Gatekeeper's
+    // translocation mount) installation is the only sensible path forward.
+    let mustMove = (try? Bundle.main.bundleURL
+        .resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) ?? false
+
+    init() {
+        if !Self.isInApplicationsFolder {
+            step = .moveToApplications
+        } else if Self.isBridgeInstalled {
+            showBridgePanel()
+        }
+    }
+
+    private nonisolated static var serviceTarget: String { "gui/\(getuid())/co.harbor.homekit" }
+
+    private nonisolated static var agentPlist: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/co.harbor.homekit.plist")
+    }
+
+    nonisolated static var isBridgeInstalled: Bool {
+        FileManager.default.fileExists(atPath: agentPlist.path)
+    }
+
+    func showBridgePanel() {
+        errorMessage = ""
+        loadInstalledSetupCode()
+        refreshBridgeStatus()
+        step = .bridge
+    }
+
+    private func loadInstalledSetupCode() {
+        let config = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Harbor HomeKit/go2rtc.yaml")
+        guard let text = try? String(contentsOf: config, encoding: .utf8) else { return }
+        for line in text.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("pin:") else { continue }
+            let digits = trimmed.dropFirst(4).prefix { $0 != "#" }.filter(\.isNumber)
+            if digits.count == 8 {
+                installedSetupCode = Self.formatSetupCode(String(digits))
+            }
+            return
+        }
+    }
+
+    func refreshBridgeStatus() {
+        Task.detached {
+            await self.updateBridgeStatus()
+        }
+    }
+
+    // Keep the panel truthful while it is visible; the task is cancelled when
+    // the view goes away.
+    func autoRefreshBridge() async {
+        while !Task.isCancelled && step == .bridge {
+            await updateBridgeStatus()
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+    }
+
+    private nonisolated func updateBridgeStatus() async {
+        let result = Self.runLaunchctl(["print", Self.serviceTarget])
+        let managed = result.status == 0 && result.output.contains("state = running")
+        // The bridge may also run outside launchd (run-native.sh in a
+        // terminal); the local API is the ground truth for "running".
+        let responding = await Self.probeBridgeAPI()
+        await MainActor.run {
+            self.bridgeManaged = managed
+            self.bridgeRunning = managed || responding
+        }
+    }
+
+    private nonisolated static func probeBridgeAPI() async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:1985/api/streams") else { return false }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 1
+        guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    func toggleBridge() {
+        bridgeBusy = true
+        errorMessage = ""
+        let starting = !bridgeRunning
+        let managed = bridgeManaged
+        Task.detached {
+            let failure: String
+            if starting {
+                _ = Self.runLaunchctl(["enable", Self.serviceTarget])
+                _ = Self.runLaunchctl(["bootstrap", "gui/\(getuid())", Self.agentPlist.path])
+                let kick = Self.runLaunchctl(["kickstart", Self.serviceTarget])
+                failure = kick.status == 0 ? "" : "The bridge could not be started: \(kick.output)"
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            } else if managed {
+                // Disable so a stopped bridge stays stopped across logins
+                // until it is started again.
+                _ = Self.runLaunchctl(["disable", Self.serviceTarget])
+                _ = Self.runLaunchctl(["bootout", Self.serviceTarget])
+                failure = ""
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            } else {
+                // Started outside launchd (for example run-native.sh in a
+                // terminal): stop whatever owns the bridge ports, matching
+                // the same ground truth the status probe uses.
+                await Self.terminateUnmanagedBridge()
+                failure = ""
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            await self.updateBridgeStatus()
+            await MainActor.run {
+                self.bridgeBusy = false
+                if !failure.isEmpty {
+                    self.errorMessage = failure
+                } else if !starting && self.bridgeRunning {
+                    self.errorMessage = "The bridge could not be stopped. Stop it from the session that started it."
+                }
+            }
+        }
+    }
+
+    private nonisolated static func bridgePortOwners() -> [pid_t] {
+        let result = runCommand("/usr/sbin/lsof", ["-t", "-i", "tcp:1984", "-i", "tcp:1985"])
+        let pids = result.output.split(separator: "\n")
+            .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
+        return Array(Set(pids)).filter { $0 > 0 && $0 != ProcessInfo.processInfo.processIdentifier }
+    }
+
+    private nonisolated static func terminateUnmanagedBridge() async {
+        for pid in bridgePortOwners() {
+            kill(pid, SIGTERM)
+        }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        for pid in bridgePortOwners() {
+            kill(pid, SIGKILL)
+        }
+    }
+
+    private nonisolated static func runLaunchctl(_ arguments: [String]) -> (status: Int32, output: String) {
+        runCommand("/bin/launchctl", arguments)
+    }
+
+    private nonisolated static func runCommand(_ path: String, _ arguments: [String]) -> (status: Int32, output: String) {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = arguments
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+        } catch {
+            return (1, error.localizedDescription)
+        }
+    }
     @Published var serial = ""
     @Published var endpoint = ""
     @Published var setupCode = ""
@@ -50,7 +213,7 @@ final class SetupModel: ObservableObject {
                    let endpoint = Self.value(after: "Harbor camera WHIP endpoint:", in: result.output),
                    let code = Self.inlineValue(after: "HomeKit setup code:", in: result.output) {
                     self.endpoint = endpoint
-                    self.setupCode = code
+                    self.setupCode = Self.formatSetupCode(code)
                     self.step = .harborApp
                     self.detail = ""
                 } else {
@@ -58,6 +221,54 @@ final class SetupModel: ObservableObject {
                     self.errorMessage = result.output.isEmpty ? "Installation failed without an error message." : result.output
                 }
             }
+        }
+    }
+
+    // Gatekeeper runs quarantined downloads from a randomized, read-only
+    // translocation path, so anything outside a real Applications folder —
+    // including the mounted disk image — should prompt a move.
+    private static var isInApplicationsFolder: Bool {
+        let bundlePath = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        let applicationDirectories =
+            NSSearchPathForDirectoriesInDomains(.applicationDirectory, .localDomainMask, true)
+            + NSSearchPathForDirectoriesInDomains(.applicationDirectory, .userDomainMask, true)
+        return applicationDirectories.contains { bundlePath.hasPrefix($0 + "/") }
+    }
+
+    func moveToApplications() {
+        errorMessage = ""
+        let source = Bundle.main.bundleURL
+        let destination = URL(fileURLWithPath: "/Applications", isDirectory: true)
+            .appendingPathComponent(source.lastPathComponent)
+        do {
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            try fileManager.copyItem(at: source, to: destination)
+        } catch {
+            errorMessage = "Could not move the app automatically (\(error.localizedDescription)). In Finder, drag Harbor HomeKit Setup into the Applications folder, then open it from there."
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: destination, configuration: configuration) { _, error in
+            Task { @MainActor in
+                if error == nil {
+                    NSApp.terminate(nil)
+                } else {
+                    self.errorMessage = "Moved the app into Applications, but it could not be reopened automatically. Open Harbor HomeKit Setup from the Applications folder to continue."
+                }
+            }
+        }
+    }
+
+    func continueWithoutMoving() {
+        errorMessage = ""
+        if Self.isBridgeInstalled {
+            showBridgePanel()
+        } else {
+            step = .camera
         }
     }
 
@@ -100,6 +311,14 @@ final class SetupModel: ObservableObject {
         }
     }
 
+    // Match the Home app's code-entry grouping (####-####) so the displayed
+    // code mirrors what the user sees while typing it.
+    private static func formatSetupCode(_ raw: String) -> String {
+        let digits = raw.filter(\.isNumber)
+        guard digits.count == 8 else { return raw }
+        return "\(digits.prefix(4))-\(digits.suffix(4))"
+    }
+
     private static func inlineValue(after label: String, in output: String) -> String? {
         output.split(separator: "\n").compactMap { line in
             let text = String(line)
@@ -124,10 +343,12 @@ struct SetupView: View {
             HarborHeader()
             Divider()
             switch model.step {
+            case .moveToApplications: moveToApplicationsStep
             case .camera: cameraStep
             case .installing: installingStep
             case .harborApp: harborAppStep
             case .homeKit: homeKitStep
+            case .bridge: bridgeStep
             }
             if !model.errorMessage.isEmpty {
                 Text(model.errorMessage).foregroundStyle(.red).textSelection(.enabled)
@@ -139,6 +360,30 @@ struct SetupView: View {
         .frame(width: 620, height: 480)
         .tint(HarborBrand.primary)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var moveToApplicationsStep: some View {
+        Group {
+            Text("Install Harbor HomeKit Setup").font(.title2).bold()
+            if model.mustMove {
+                Text("Harbor HomeKit Setup needs to be installed in your Applications folder before it can set up your camera.")
+                Text("Drag Harbor HomeKit Setup into Applications in the download window, or click Move to Applications to install it now.")
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Harbor HomeKit Setup is running from a temporary location. Keeping it in Applications means it stays on this Mac after the download is cleaned up, so you can reopen it any time to see your camera details.")
+                Text("Click the button below, or drag Harbor HomeKit Setup onto the Applications folder in Finder and reopen it.")
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Button("Move to Applications") { model.moveToApplications() }
+                    .buttonStyle(.borderedProminent)
+                if model.mustMove {
+                    Button("Quit") { NSApp.terminate(nil) }
+                } else {
+                    Button("Continue Without Moving") { model.continueWithoutMoving() }
+                }
+            }
+        }
     }
 
     private var cameraStep: some View {
@@ -196,10 +441,47 @@ struct SetupView: View {
             }
             Text(model.setupCode).font(.system(size: 34, weight: .bold, design: .monospaced))
                 .padding(.vertical, 8)
-            Button("Copy Setup Code") { model.copy(model.setupCode) }
+            HStack {
+                Button("Copy Setup Code") { model.copy(model.setupCode) }
+                Button("Done") { model.showBridgePanel() }
+                    .buttonStyle(.borderedProminent)
+            }
             Text("Keep this code private. Reinstalling preserves it so the camera remains paired.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    private var bridgeStep: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label(model.bridgeRunning ? "Bridge is running" : "Bridge is stopped",
+                  systemImage: model.bridgeRunning ? "checkmark.circle.fill" : "pause.circle.fill")
+                .foregroundStyle(model.bridgeRunning ? .green : .orange)
+                .font(.title3)
+            if model.bridgeRunning && !model.bridgeManaged {
+                Text("The bridge is running outside the managed background service — for example from a terminal session. Stopping it here ends those processes; starting it again runs it as the managed background service.")
+            } else {
+                Text(model.bridgeRunning
+                     ? "Your Harbor camera is available in Apple Home while the bridge runs. The bridge starts automatically when you log into this Mac."
+                     : "Apple Home cannot reach your Harbor camera while the bridge is stopped. It stays stopped, including after a restart, until you start it again.")
+            }
+            if !model.installedSetupCode.isEmpty {
+                Text("HomeKit setup code").font(.headline)
+                HStack(spacing: 12) {
+                    Text(model.installedSetupCode)
+                        .font(.system(size: 26, weight: .bold, design: .monospaced))
+                    Button("Copy") { model.copy(model.installedSetupCode) }
+                }
+            }
+            HStack {
+                Button(model.bridgeRunning ? "Stop Bridge" : "Start Bridge") { model.toggleBridge() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.bridgeBusy)
+                Button("Run Setup Again") { model.step = .camera }
+                    .disabled(model.bridgeBusy)
+                if model.bridgeBusy { ProgressView().controlSize(.small) }
+            }
+        }
+        .task { await model.autoRefreshBridge() }
     }
 }
 

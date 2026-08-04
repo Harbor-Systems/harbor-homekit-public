@@ -6,13 +6,19 @@
 # so the stream name below MUST equal the camera serial.
 #
 app:
-  # Minimize the loaded attack surface. `exec` is required for FFmpeg.
-  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit]
+  # Minimize the loaded attack surface. `exec` is required for FFmpeg;
+  # `srtp` carries HomeKit's encrypted video after pairing.
+  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit, srtp]
 
 api:
   # Never expose go2rtc's powerful API or Web UI to the LAN.
   listen: "127.0.0.1:1985"
   allow_paths: [/api/streams, /api/webrtc]
+
+# Apple Home pairs over this dedicated listener (Harbor's go2rtc patch); it
+# serves only the HAP pairing endpoints, and everything after pairing is
+# HAP-session encrypted. This keeps the API above loopback-only.
+homekit_listen: ":21063"
 
 rtsp:
   # FFmpeg uses RTSP internally; customers do not need LAN access to it.
