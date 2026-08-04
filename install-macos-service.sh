@@ -194,6 +194,21 @@ if ! grep -Fq 'homekit_listen:' "$INSTALL_DIR/go2rtc.yaml"; then
     '# Apple Home pairs over this dedicated listener; see repository go2rtc.yaml.' \
     'homekit_listen: ":21063"' >> "$INSTALL_DIR/go2rtc.yaml"
 fi
+# Migrate configs that predate the strict HomeKit transcode settings. Apple's
+# receiver rejects multi-slice frames and expects the negotiated Main 4.0 /
+# 720p / 16 kHz mono stream; see repository go2rtc.yaml for the breakdown.
+if ! grep -Fq 'sliced-threads=0' "$INSTALL_DIR/go2rtc.yaml"; then
+  sed -i '' -E 's|^(    - ffmpeg:[^#]+#video=h264#audio=opus)$|\1#raw=-vf scale=-2:720,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -bsf:v dump_extra=freq=keyframe -x264-params sliced-threads=0 -ar 16000 -ac 1 -b:a 24k|' \
+    "$INSTALL_DIR/go2rtc.yaml"
+fi
+if ! grep -Eq '^ffmpeg:' "$INSTALL_DIR/go2rtc.yaml"; then
+  {
+    echo ''
+    echo '# HomeKit negotiates H264 Main 4.0; override the built-in High 4.1 template.'
+    echo 'ffmpeg:'
+    echo '  h264: "-c:v libx264 -g 50 -profile:v main -level:v 4.0 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"'
+  } >> "$INSTALL_DIR/go2rtc.yaml"
+fi
 sed -i '' -E "s/^([[:space:]]+pin:).*/\\1 $homekit_pin        # unique PIN generated during installation/" "$INSTALL_DIR/go2rtc.yaml"
 written_pin="$(read_pin "$INSTALL_DIR/go2rtc.yaml")"
 if ! is_valid_pin "$written_pin" || [ "$written_pin" != "$homekit_pin" ]; then

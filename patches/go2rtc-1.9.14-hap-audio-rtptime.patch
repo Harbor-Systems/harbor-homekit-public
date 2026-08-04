@@ -1,0 +1,16 @@
+diff --git a/pkg/hap/camera/accessory.go b/pkg/hap/camera/accessory.go
+index 3772449..8135ac9 100644
+--- a/pkg/hap/camera/accessory.go
++++ b/pkg/hap/camera/accessory.go
+@@ -76,6 +76,11 @@ func ServiceCameraRTPStreamManagement() *hap.Service {
+ 						Channels:    1,
+ 						BitrateMode: AudioCodecBitrateVariable,
+ 						SampleRate:  []byte{AudioCodecSampleRate16Khz},
++						// HAP requires the RTP time field; controllers on
++						// 2026-era iOS/macOS abort stream negotiation when
++						// it is absent ("Failed to parse number for tlv:
++						// kAudioCodecParameters__RTPPtime").
++						RTPTime:     []uint8{20},
+ 					},
+ 				},
+ 			},
