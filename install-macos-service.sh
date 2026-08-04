@@ -5,7 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 LABEL="co.harbor.homekit"
+APP_NAME="Harbor HomeKit Bridge"
+APP_BUNDLE_ID="co.harbor.homekit.bridge"
 INSTALL_DIR="$HOME/Library/Application Support/Harbor HomeKit"
+APP_DIR="$INSTALL_DIR/$APP_NAME.app"
 LOG_DIR="$HOME/Library/Logs/Harbor HomeKit"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 CONFIG_SOURCE="./go2rtc.yaml"
@@ -232,12 +235,75 @@ if [ -x ./harbor-whip-gateway ]; then
   ditto ./harbor-whip-gateway "$INSTALL_DIR/harbor-whip-gateway"
   chmod 700 "$INSTALL_DIR/harbor-whip-gateway"
 fi
+if [ -x ./harbor-bridge-launcher ]; then
+  ditto ./harbor-bridge-launcher "$INSTALL_DIR/harbor-bridge-launcher"
+  chmod 700 "$INSTALL_DIR/harbor-bridge-launcher"
+fi
+
+# The launcher must exist before the service starts because it is the app
+# bundle's main executable; fetch the pinned release binaries up front.
+if [ ! -x "$INSTALL_DIR/harbor-bridge-launcher" ] ||
+   [ ! -x "$INSTALL_DIR/go2rtc" ] ||
+   [ ! -x "$INSTALL_DIR/harbor-whip-gateway" ]; then
+  (cd "$INSTALL_DIR" && HARBOR_DOWNLOAD_ONLY=1 /bin/bash ./run-native.sh)
+fi
+if [ ! -x "$INSTALL_DIR/harbor-bridge-launcher" ]; then
+  echo "This release does not include harbor-bridge-launcher, which macOS" >&2
+  echo "needs to grant the bridge Local Network access. Install a newer" >&2
+  echo "release, or build it from source: go build ./cmd/bridge-launcher" >&2
+  exit 1
+fi
+
+# macOS only grants Local Network access to app bundles, so the LaunchAgent
+# starts the launcher from inside a branded, signed bundle. The downloaded
+# go2rtc/gateway binaries stay outside the bundle: replacing them on upgrade
+# must not invalidate the bundle's code signature.
+# shellcheck disable=SC1091
+bundle_version="$(. ./scripts/versions.env && printf '%s' "${HARBOR_HOMEKIT_RELEASE#v}")"
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS"
+ditto "$INSTALL_DIR/harbor-bridge-launcher" "$APP_DIR/Contents/MacOS/$APP_NAME"
+chmod 755 "$APP_DIR/Contents/MacOS/$APP_NAME"
+INFO_PLIST="$APP_DIR/Contents/Info.plist"
+plutil -create xml1 "$INFO_PLIST"
+plutil -insert CFBundleIdentifier -string "$APP_BUNDLE_ID" "$INFO_PLIST"
+plutil -insert CFBundleName -string "$APP_NAME" "$INFO_PLIST"
+plutil -insert CFBundleDisplayName -string "$APP_NAME" "$INFO_PLIST"
+plutil -insert CFBundleExecutable -string "$APP_NAME" "$INFO_PLIST"
+plutil -insert CFBundlePackageType -string APPL "$INFO_PLIST"
+plutil -insert CFBundleShortVersionString -string "$bundle_version" "$INFO_PLIST"
+plutil -insert CFBundleVersion -string "$bundle_version" "$INFO_PLIST"
+plutil -insert LSUIElement -bool true "$INFO_PLIST"
+plutil -insert NSLocalNetworkUsageDescription -string \
+  "Harbor HomeKit Bridge advertises your camera to Apple Home and streams video to it over your local network." \
+  "$INFO_PLIST"
+plutil -insert NSBonjourServices -json '["_hap._tcp"]' "$INFO_PLIST"
+plutil -lint "$INFO_PLIST"
+
+# Prefer the customer's Developer ID identity when one exists; otherwise an
+# ad-hoc signature still gives TCC a stable code identity to attach the
+# Local Network grant to (same content signs to the same identity, so
+# reinstalls of the same version keep the grant).
+signing_identity="$(security find-identity -v -p codesigning 2>/dev/null |
+  awk -F'"' '/Developer ID Application/{print $2; exit}')"
+if [ -n "$signing_identity" ]; then
+  codesign --force --options runtime --timestamp \
+    --identifier "$APP_BUNDLE_ID" --sign "$signing_identity" "$APP_DIR"
+else
+  codesign --force --identifier "$APP_BUNDLE_ID" --sign - "$APP_DIR"
+fi
+codesign --verify --strict "$APP_DIR"
+# Register the bundle so the Local Network pane and prompt show its name.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "$APP_DIR" >/dev/null 2>&1 || true
 
 plutil -create xml1 "$PLIST"
 plutil -insert Label -string "$LABEL" "$PLIST"
-plutil -insert ProgramArguments -json '["/bin/bash"]' "$PLIST"
-plutil -insert ProgramArguments.1 -string "$INSTALL_DIR/run-native.sh" "$PLIST"
+plutil -insert ProgramArguments -json '[]' "$PLIST"
+plutil -insert ProgramArguments.0 -string "$APP_DIR/Contents/MacOS/$APP_NAME" "$PLIST"
 plutil -insert WorkingDirectory -string "$INSTALL_DIR" "$PLIST"
+# Lets Login Items and Local Network attribute the agent to the bundle.
+plutil -insert AssociatedBundleIdentifiers -string "$APP_BUNDLE_ID" "$PLIST"
 plutil -insert RunAtLoad -bool true "$PLIST"
 plutil -insert KeepAlive -bool true "$PLIST"
 plutil -insert ProcessType -string Interactive "$PLIST"
@@ -317,9 +383,10 @@ kill "$mdns_browse_pid" >/dev/null 2>&1 || true
 if ! sed -n '/Instance Name/,$p' "$mdns_browse_log" | grep -q '_hap._tcp'; then
   echo >&2
   echo "WARNING: no HomeKit accessory is visible on the network yet." >&2
-  echo "macOS may be blocking the bridge's Local Network access." >&2
-  echo "Open System Settings > Privacy & Security > Local Network, allow" >&2
-  echo "the bridge (listed as go2rtc or bash), then rerun this installer." >&2
+  echo "macOS may still be asking for permission, or may be blocking the" >&2
+  echo "bridge's Local Network access. Approve the \"$APP_NAME\" prompt, or" >&2
+  echo "open System Settings > Privacy & Security > Local Network and allow" >&2
+  echo "\"$APP_NAME\", then rerun this installer." >&2
 fi
 rm -f "$mdns_browse_log"
 # Grouped like the Home app's code-entry field (####-####).

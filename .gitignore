@@ -3,6 +3,8 @@
 /go2rtc.exe
 # Locally built gateway binary (source: cmd/whip-gateway)
 /harbor-whip-gateway
+# Locally built launcher binary (source: cmd/bridge-launcher)
+/harbor-bridge-launcher
 /dist/
 .harbor-data/
 .harbor-whip-token

@@ -165,12 +165,11 @@ playback, configuration, or other API routes.
 
 - **Check Local Network permission first.** macOS silently drops the bridge's
   HomeKit discovery announcements when the service lacks Local Network access.
-  Open **System Settings → Privacy & Security → Local Network**, enable the
-  bridge's entry (shown as `go2rtc` or `bash`), then restart the bridge or
-  rerun the installer. The installer warns at the end when the accessory is
-  not visible on the network. If the accessory still does not appear after
-  the permission is enabled, restart the Mac — macOS applies Local Network
-  changes to background services only after a reboot.
+  The bridge runs inside the **Harbor HomeKit Bridge** app bundle so macOS can
+  ask for this permission by name — approve the prompt when it appears. If it
+  was dismissed, open **System Settings → Privacy & Security → Local Network**,
+  enable **Harbor HomeKit Bridge**, then rerun the installer. The installer
+  warns at the end when the accessory is not visible on the network.
 - Keep the bridge and Apple device on the same LAN/subnet, and disable VPNs on
   either device while pairing — VPNs commonly swallow multicast discovery.
 - On macOS, use the native LaunchAgent rather than Docker Desktop.

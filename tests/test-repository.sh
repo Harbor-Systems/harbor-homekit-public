@@ -124,7 +124,7 @@ for expected in \
   fi
 done
 
-if [ "$(grep -c 'verify_macos_binary "' run-native.sh)" -ne 4 ]; then
+if [ "$(grep -c 'verify_macos_binary "' run-native.sh)" -ne 5 ]; then
   echo "Native runner must verify both extracted and installed macOS binaries" >&2
   exit 1
 fi

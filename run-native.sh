@@ -20,6 +20,7 @@ cd "$(dirname "$0")"
 
 BIN="./go2rtc"
 GATEWAY_BIN="./harbor-whip-gateway"
+LAUNCHER_BIN="./harbor-bridge-launcher"
 TOKEN_FILE="./.harbor-whip-token"
 STATUS_FILE="./.harbor-whip-connected"
 REPOSITORY="Harbor-Systems/harbor-homekit-public"
@@ -104,6 +105,15 @@ if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
   mv "$tmp/unpacked/go2rtc" "$BIN"
   mv "$tmp/unpacked/harbor-whip-gateway" "$GATEWAY_BIN"
   chmod +x "$BIN" "$GATEWAY_BIN"
+  # macOS releases since the app-bundle restructure also ship the launcher
+  # that "Harbor HomeKit Bridge.app" wraps for Local Network attribution.
+  if [ -f "$tmp/unpacked/harbor-bridge-launcher" ]; then
+    if [ "$os_tag" = "mac" ]; then
+      verify_macos_binary "$tmp/unpacked/harbor-bridge-launcher"
+    fi
+    mv "$tmp/unpacked/harbor-bridge-launcher" "$LAUNCHER_BIN"
+    chmod +x "$LAUNCHER_BIN"
+  fi
 fi
 
 if [ "$os_tag" = "mac" ]; then
@@ -115,6 +125,12 @@ if [ ! -x "$GATEWAY_BIN" ]; then
   echo "Harbor WHIP gateway is missing. Remove ./go2rtc and rerun to download" >&2
   echo "the complete pinned release, or build the gateway from source." >&2
   exit 1
+fi
+
+# The installer materializes binaries up front with this hook so the app
+# bundle can be assembled before the service ever starts.
+if [ "${HARBOR_DOWNLOAD_ONLY:-0}" = "1" ]; then
+  exit 0
 fi
 
 # ffmpeg is needed for transcoding fallbacks. Warn if missing.

@@ -39,6 +39,8 @@ jobs:
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-mac-amd64 ./cmd/whip-gateway
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-arm64 ./cmd/whip-gateway
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-amd64 ./cmd/whip-gateway
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/launcher-mac-arm64 ./cmd/bridge-launcher
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/launcher-mac-amd64 ./cmd/bridge-launcher
           ./scripts/build-macos-setup-app.sh "dist/Harbor HomeKit Setup.app"
       - name: Sign macOS binaries
         env:
@@ -75,7 +77,7 @@ jobs:
             printf '%s\n' "$details" | grep -Fqx "Authority=$expected_identity"
             printf '%s\n' "$details" | grep -Fqx "TeamIdentifier=$expected_team"
           done
-          for binary in dist/gateway-mac-*; do
+          for binary in dist/gateway-mac-* dist/launcher-mac-*; do
             codesign --force --options runtime --timestamp \
               --sign "$APPLE_SIGNING_IDENTITY" "$binary"
             codesign --verify --strict --verbose=2 "$binary"
@@ -101,10 +103,15 @@ jobs:
             binary_platform="${platform/_/-}"
             cp "dist/go2rtc-$binary_platform" "$package_dir/go2rtc"
             cp "dist/gateway-$binary_platform" "$package_dir/harbor-whip-gateway"
+            zip_contents=(go2rtc harbor-whip-gateway)
+            if [ -f "dist/launcher-$binary_platform" ]; then
+              cp "dist/launcher-$binary_platform" "$package_dir/harbor-bridge-launcher"
+              zip_contents+=(harbor-bridge-launcher)
+            fi
             (
               cd "$package_dir"
               zip -q "$GITHUB_WORKSPACE/dist/harbor-homekit-go2rtc_${platform}.zip" \
-                go2rtc harbor-whip-gateway
+                "${zip_contents[@]}"
             )
           done
           ./scripts/build-macos-setup-dmg.sh \
