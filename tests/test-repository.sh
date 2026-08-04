@@ -74,8 +74,8 @@ done
 for setup_app_text in \
   'scripts/build-macos-setup-app.sh' \
   'scripts/build-macos-setup-dmg.sh' \
-  'dist/Harbor HomeKit Setup.app' \
-  'dist/Harbor-HomeKit-Setup.dmg'; do
+  'dist/Harbor HomeKit Bridge.app' \
+  'dist/Harbor-HomeKit-Bridge.dmg'; do
   if ! grep -Fq "$setup_app_text" .github/workflows/release.yml; then
     echo "Release workflow is missing setup application step: $setup_app_text" >&2
     exit 1
@@ -102,7 +102,7 @@ for required_release_text in \
   'codesign --force --options runtime --timestamp' \
   'name: Notarize macOS archives' \
   'xcrun notarytool submit' \
-  'xcrun stapler staple "dist/Harbor-HomeKit-Setup.dmg"'; do
+  'xcrun stapler staple "dist/Harbor-HomeKit-Bridge.dmg"'; do
   if ! grep -Fq "$required_release_text" .github/workflows/release.yml; then
     echo "Release workflow is missing: $required_release_text" >&2
     exit 1

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-output="${1:-$root/dist/Harbor HomeKit Setup.app}"
+output="${1:-$root/dist/Harbor HomeKit Bridge.app}"
 contents="$output/Contents"
 
 rm -rf "$output"
@@ -20,7 +20,7 @@ for arch in arm64 x86_64; do
     -o "$build_dir/setup-$arch"
 done
 lipo -create "$build_dir/setup-arm64" "$build_dir/setup-x86_64" \
-  -output "$contents/MacOS/Harbor HomeKit Setup"
+  -output "$contents/MacOS/Harbor HomeKit Bridge"
 
 cp "$root/install-macos-service.sh" "$contents/Resources/installer/"
 cp "$root/configure-camera-serial.sh" "$contents/Resources/installer/"
@@ -49,17 +49,17 @@ cat > "$contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>Harbor HomeKit Setup</string>
-  <key>CFBundleIdentifier</key><string>co.projectmonitor.harbor-homekit-setup</string>
+  <key>CFBundleExecutable</key><string>Harbor HomeKit Bridge</string>
+  <key>CFBundleIdentifier</key><string>co.projectmonitor.harbor-homekit-bridge</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Harbor HomeKit Setup</string>
+  <key>CFBundleName</key><string>Harbor HomeKit Bridge</string>
   <key>CFBundleIconFile</key><string>HarborHomeKit</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.3.1</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>NSLocalNetworkUsageDescription</key><string>Harbor HomeKit Setup connects your Harbor camera to this Mac on your local network.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Harbor HomeKit Bridge connects your Harbor camera to this Mac on your local network.</string>
 </dict></plist>
 PLIST
 
-chmod 755 "$contents/MacOS/Harbor HomeKit Setup" "$contents/Resources/installer/"*.sh
+chmod 755 "$contents/MacOS/Harbor HomeKit Bridge" "$contents/Resources/installer/"*.sh

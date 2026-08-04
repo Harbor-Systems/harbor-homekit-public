@@ -1,6 +1,6 @@
 import AppKit
 
-// Renders the Harbor HomeKit Setup disk-image background: brand logo on top,
+// Renders the Harbor HomeKit Bridge disk-image background: brand logo on top,
 // an arrow between the app-icon and Applications-folder drop positions, and an
 // install instruction. Drawn at 2x and tagged with point dimensions so Finder
 // shows it crisp on Retina displays.
@@ -79,7 +79,7 @@ head.close()
 brand.setFill()
 head.fill()
 
-let caption = "Drag Harbor HomeKit Setup into Applications to install" as NSString
+let caption = "Drag Harbor HomeKit Bridge into Applications to install" as NSString
 let captionAttributes: [NSAttributedString.Key: Any] = [
     .font: NSFont.systemFont(ofSize: 15, weight: .medium),
     .foregroundColor: NSColor.darkGray,

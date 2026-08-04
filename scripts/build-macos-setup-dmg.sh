@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Package the Harbor HomeKit Setup app as a drag-to-Applications disk image
+# Package the Harbor HomeKit Bridge app as a drag-to-Applications disk image
 # with the branded background, pinned icon layout, and hidden window chrome.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-app="${1:-$root/dist/Harbor HomeKit Setup.app}"
-output="${2:-$root/dist/Harbor-HomeKit-Setup.dmg}"
-volume_name="Harbor HomeKit Setup"
+app="${1:-$root/dist/Harbor HomeKit Bridge.app}"
+output="${2:-$root/dist/Harbor-HomeKit-Bridge.dmg}"
+volume_name="Harbor HomeKit Bridge"
 
 if [ ! -d "$app" ]; then
   echo "Setup app not found: $app" >&2
@@ -31,7 +31,7 @@ fi
 
 staging="$work/staging"
 mkdir -p "$staging/.background"
-ditto "$app" "$staging/Harbor HomeKit Setup.app"
+ditto "$app" "$staging/Harbor HomeKit Bridge.app"
 ln -s /Applications "$staging/Applications"
 swift "$root/macos/RenderDMGBackground.swift" \
   "$root/macos/HarborLogo.svg" "$staging/.background/background.png"
@@ -61,7 +61,7 @@ tell application "Finder"
     set icon size of view_options to 128
     set text size of view_options to 13
     set background picture of view_options to file ".background:background.png"
-    set position of item "Harbor HomeKit Setup.app" of container window to {150, 190}
+    set position of item "Harbor HomeKit Bridge.app" of container window to {150, 190}
     set position of item "Applications" of container window to {450, 190}
     -- Keep support files out of the layout for people who show hidden files.
     repeat with hidden_name in {".background", ".fseventsd", ".DS_Store", ".Trashes"}

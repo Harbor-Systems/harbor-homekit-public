@@ -27,8 +27,8 @@ FileVault login screen.
 
 ## macOS installation
 
-Download `Harbor-HomeKit-Setup.dmg` from the latest release, open it, and drag
-**Harbor HomeKit Setup** onto the Applications folder shown in the window. Open
+Download `Harbor-HomeKit-Bridge.dmg` from the latest release, open it, and drag
+**Harbor HomeKit Bridge** onto the Applications folder shown in the window. Open
 the app from Applications. The setup wizard:
 
 1. asks for the camera serial number;

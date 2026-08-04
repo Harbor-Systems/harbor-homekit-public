@@ -247,7 +247,7 @@ final class SetupModel: ObservableObject {
             }
             try fileManager.copyItem(at: source, to: destination)
         } catch {
-            errorMessage = "Could not move the app automatically (\(error.localizedDescription)). In Finder, drag Harbor HomeKit Setup into the Applications folder, then open it from there."
+            errorMessage = "Could not move the app automatically (\(error.localizedDescription)). In Finder, drag Harbor HomeKit Bridge into the Applications folder, then open it from there."
             return
         }
         let configuration = NSWorkspace.OpenConfiguration()
@@ -257,7 +257,7 @@ final class SetupModel: ObservableObject {
                 if error == nil {
                     NSApp.terminate(nil)
                 } else {
-                    self.errorMessage = "Moved the app into Applications, but it could not be reopened automatically. Open Harbor HomeKit Setup from the Applications folder to continue."
+                    self.errorMessage = "Moved the app into Applications, but it could not be reopened automatically. Open Harbor HomeKit Bridge from the Applications folder to continue."
                 }
             }
         }
@@ -364,14 +364,14 @@ struct SetupView: View {
 
     private var moveToApplicationsStep: some View {
         Group {
-            Text("Install Harbor HomeKit Setup").font(.title2).bold()
+            Text("Install Harbor HomeKit Bridge").font(.title2).bold()
             if model.mustMove {
-                Text("Harbor HomeKit Setup needs to be installed in your Applications folder before it can set up your camera.")
-                Text("Drag Harbor HomeKit Setup into Applications in the download window, or click Move to Applications to install it now.")
+                Text("Harbor HomeKit Bridge needs to be installed in your Applications folder before it can set up your camera.")
+                Text("Drag Harbor HomeKit Bridge into Applications in the download window, or click Move to Applications to install it now.")
                     .foregroundStyle(.secondary)
             } else {
-                Text("Harbor HomeKit Setup is running from a temporary location. Keeping it in Applications means it stays on this Mac after the download is cleaned up, so you can reopen it any time to see your camera details.")
-                Text("Click the button below, or drag Harbor HomeKit Setup onto the Applications folder in Finder and reopen it.")
+                Text("Harbor HomeKit Bridge is running from a temporary location. Keeping it in Applications means it stays on this Mac after the download is cleaned up, so you can reopen it any time to see your camera details.")
+                Text("Click the button below, or drag Harbor HomeKit Bridge onto the Applications folder in Finder and reopen it.")
                     .foregroundStyle(.secondary)
             }
             HStack {
