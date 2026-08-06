@@ -23,12 +23,67 @@ if grep -Eq 'releases/latest|GO2RTC_VERSION:-latest' run-native.sh; then
   exit 1
 fi
 
-if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.3.2" ]; then
-  echo "Native installer must use the signed and notarized v0.3.2 release" >&2
+homekit_boundary_text='homekit_listen: ":21063"'
+for boundary_file in go2rtc.yaml run-native.sh; do
+  if ! grep -Fq "$homekit_boundary_text" "$boundary_file"; then
+    echo "$boundary_file is missing the HomeKit pairing listener boundary" >&2
+    exit 1
+  fi
+done
+
+if [ ! -s patches/go2rtc-1.9.14-homekit-lan-listener.patch ]; then
+  echo "The HomeKit LAN listener patch is missing" >&2
   exit 1
 fi
 
-if ! grep -Fq 'shasum -a 256 -- *.zip > checksums.txt' .github/workflows/release.yml; then
+# shellcheck disable=SC2016 # literal grep pattern, not an expansion
+if ! grep -Fq 'for patch in "$ROOT_DIR"/patches/*.patch' scripts/build-go2rtc.sh; then
+  echo "go2rtc build must apply every versioned patch" >&2
+  exit 1
+fi
+
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.4.0" ]; then
+  echo "Native installer must use the signed and notarized v0.4.0 release" >&2
+  exit 1
+fi
+
+for required_homekit_patch_text in \
+  'net.Listen("tcp", cfg.Listen)' \
+  'ReadHeaderTimeout: 10 * time.Second'; do
+  if ! grep -Fq "$required_homekit_patch_text" patches/go2rtc-1.9.14-homekit-lan-listener.patch; then
+    echo "HomeKit LAN listener patch is missing: $required_homekit_patch_text" >&2
+    exit 1
+  fi
+done
+
+if ! grep -Fq "[ \"\$os_tag\" = \"mac\" ] && [ ! -x \"\$LAUNCHER_BIN\" ]" run-native.sh; then
+  echo "Native runner must download a missing macOS bridge launcher" >&2
+  exit 1
+fi
+
+if ! grep -Fq '<string>0.4.0</string>' scripts/build-macos-setup-app.sh; then
+  echo "macOS app version must match release v0.4.0" >&2
+  exit 1
+fi
+
+for required_setup_safety_text in \
+  'installedSetupCode = ""' \
+  '"-sTCP:LISTEN"' \
+  'readDataToEndOfFile()' \
+  'replaceItemAt(destination, withItemAt: staging)'; do
+  if ! grep -Fq "$required_setup_safety_text" macos/HarborHomeKitSetup.swift; then
+    echo "macOS bridge UI is missing safety behavior: $required_setup_safety_text" >&2
+    exit 1
+  fi
+done
+
+if [ ! -s macos/HarborLogo.png ] || \
+   ! grep -Fq 'macos/HarborLogo.png' scripts/build-macos-setup-dmg.sh; then
+  echo "DMG renderer must use the committed PNG wordmark" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'shasum -a 256 -- *.zip *.dmg > checksums.txt' .github/workflows/release.yml; then
   echo "Release checksums must use archive basenames" >&2
   exit 1
 fi
@@ -53,10 +108,22 @@ done
 
 for setup_app_text in \
   'scripts/build-macos-setup-app.sh' \
-  'dist/Harbor HomeKit Setup.app' \
-  'dist/Harbor-HomeKit-Setup.zip'; do
+  'scripts/build-macos-setup-dmg.sh' \
+  'dist/Harbor HomeKit Bridge.app' \
+  'dist/Harbor-HomeKit-Bridge.dmg'; do
   if ! grep -Fq "$setup_app_text" .github/workflows/release.yml; then
     echo "Release workflow is missing setup application step: $setup_app_text" >&2
+    exit 1
+  fi
+done
+
+# shellcheck disable=SC2016 # literal grep pattern, not an expansion
+for dmg_layout_text in \
+  'ln -s /Applications "$staging/Applications"' \
+  'RenderDMGBackground.swift' \
+  'set background picture of view_options'; do
+  if ! grep -Fq "$dmg_layout_text" scripts/build-macos-setup-dmg.sh; then
+    echo "Disk image script is missing drag-to-install layout: $dmg_layout_text" >&2
     exit 1
   fi
 done
@@ -70,7 +137,8 @@ for required_release_text in \
   'name: Sign macOS binaries' \
   'codesign --force --options runtime --timestamp' \
   'name: Notarize macOS archives' \
-  'xcrun notarytool submit'; do
+  'xcrun notarytool submit' \
+  'xcrun stapler staple "dist/Harbor-HomeKit-Bridge.dmg"'; do
   if ! grep -Fq "$required_release_text" .github/workflows/release.yml; then
     echo "Release workflow is missing: $required_release_text" >&2
     exit 1
@@ -92,7 +160,7 @@ for expected in \
   fi
 done
 
-if [ "$(grep -c 'verify_macos_binary "' run-native.sh)" -ne 4 ]; then
+if [ "$(grep -c 'verify_macos_binary "' run-native.sh)" -ne 5 ]; then
   echo "Native runner must verify both extracted and installed macOS binaries" >&2
   exit 1
 fi

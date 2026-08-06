@@ -1,0 +1,29 @@
+diff --git a/pkg/srtp/session.go b/pkg/srtp/session.go
+index 0ab8164..ccecef3 100644
+--- a/pkg/srtp/session.go
++++ b/pkg/srtp/session.go
+@@ -74,7 +74,7 @@ func (s *Session) WriteRTP(packet *rtp.Packet) (int, error) {
+ 	}
+ 
+ 	if now := time.Now(); now.After(s.senderTime) {
+-		s.senderRTCP.NTPTime = uint64(now.UnixNano())
++		s.senderRTCP.NTPTime = ntpTime(now)
+ 		s.senderTime = now.Add(s.RTCPInterval)
+ 		_, _ = s.WriteRTCP(&s.senderRTCP)
+ 	}
+@@ -158,3 +158,15 @@ func (s *Session) ReadRTCP(b []byte) {
+ 	receiverRTCP := rtcp.ReceiverReport{SSRC: s.Local.SSRC}
+ 	_, _ = s.WriteRTCP(&receiverRTCP)
+ }
++
++// ntpTime returns t in the NTP 64-bit format RFC 3550 requires for sender
++// reports: seconds since 1900 in the upper 32 bits, fraction of a second in
++// the lower 32 bits. Apple controllers validate sender-report timing before
++// rendering; raw Unix nanoseconds here put the stream decades in the past
++// and iOS never starts playback.
++func ntpTime(t time.Time) uint64 {
++	const epochOffset = 2208988800 // seconds from 1900-01-01 to 1970-01-01
++	secs := uint64(t.Unix()) + epochOffset
++	frac := (uint64(t.Nanosecond()) << 32) / 1_000_000_000
++	return secs<<32 | frac
++}

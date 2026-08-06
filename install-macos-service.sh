@@ -5,7 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 LABEL="co.harbor.homekit"
+APP_NAME="Harbor HomeKit Bridge"
+APP_BUNDLE_ID="co.harbor.homekit.bridge"
 INSTALL_DIR="$HOME/Library/Application Support/Harbor HomeKit"
+APP_DIR="$INSTALL_DIR/$APP_NAME.app"
 LOG_DIR="$HOME/Library/Logs/Harbor HomeKit"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 CONFIG_SOURCE="./go2rtc.yaml"
@@ -182,6 +185,30 @@ if ! grep -Fq 'listen: "127.0.0.1:1985"' "$INSTALL_DIR/go2rtc.yaml" ||
   chmod 600 "$migrated_config"
   mv "$migrated_config" "$INSTALL_DIR/go2rtc.yaml"
 fi
+# Migrate pre-v0.4 configs: HomeKit needs the dedicated pairing listener and
+# the srtp module, added alongside the existing hardened blocks.
+if ! grep -Fq 'homekit_listen:' "$INSTALL_DIR/go2rtc.yaml"; then
+  sed -i '' 's/^  modules: \[api, rtsp, webrtc, exec, ffmpeg, homekit\]$/  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit, srtp]/' \
+    "$INSTALL_DIR/go2rtc.yaml"
+  printf '\n%s\n%s\n' \
+    '# Apple Home pairs over this dedicated listener; see repository go2rtc.yaml.' \
+    'homekit_listen: ":21063"' >> "$INSTALL_DIR/go2rtc.yaml"
+fi
+# Migrate configs that predate the strict HomeKit transcode settings. Apple's
+# receiver rejects multi-slice frames and expects the negotiated Main 4.0 /
+# 720p / 16 kHz mono stream; see repository go2rtc.yaml for the breakdown.
+if ! grep -Fq 'sliced-threads=0' "$INSTALL_DIR/go2rtc.yaml"; then
+  sed -i '' -E 's|^(    - ffmpeg:[^#]+#video=h264#audio=opus)$|\1#raw=-vf scale=-2:720,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -bsf:v dump_extra=freq=keyframe -x264-params sliced-threads=0 -ar 16000 -ac 1 -b:a 24k|' \
+    "$INSTALL_DIR/go2rtc.yaml"
+fi
+if ! grep -Eq '^ffmpeg:' "$INSTALL_DIR/go2rtc.yaml"; then
+  {
+    echo ''
+    echo '# HomeKit negotiates H264 Main 4.0; override the built-in High 4.1 template.'
+    echo 'ffmpeg:'
+    echo '  h264: "-c:v libx264 -g 50 -profile:v main -level:v 4.0 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"'
+  } >> "$INSTALL_DIR/go2rtc.yaml"
+fi
 sed -i '' -E "s/^([[:space:]]+pin:).*/\\1 $homekit_pin        # unique PIN generated during installation/" "$INSTALL_DIR/go2rtc.yaml"
 written_pin="$(read_pin "$INSTALL_DIR/go2rtc.yaml")"
 if ! is_valid_pin "$written_pin" || [ "$written_pin" != "$homekit_pin" ]; then
@@ -223,12 +250,75 @@ if [ -x ./harbor-whip-gateway ]; then
   ditto ./harbor-whip-gateway "$INSTALL_DIR/harbor-whip-gateway"
   chmod 700 "$INSTALL_DIR/harbor-whip-gateway"
 fi
+if [ -x ./harbor-bridge-launcher ]; then
+  ditto ./harbor-bridge-launcher "$INSTALL_DIR/harbor-bridge-launcher"
+  chmod 700 "$INSTALL_DIR/harbor-bridge-launcher"
+fi
+
+# The launcher must exist before the service starts because it is the app
+# bundle's main executable; fetch the pinned release binaries up front.
+if [ ! -x "$INSTALL_DIR/harbor-bridge-launcher" ] ||
+   [ ! -x "$INSTALL_DIR/go2rtc" ] ||
+   [ ! -x "$INSTALL_DIR/harbor-whip-gateway" ]; then
+  (cd "$INSTALL_DIR" && HARBOR_DOWNLOAD_ONLY=1 /bin/bash ./run-native.sh)
+fi
+if [ ! -x "$INSTALL_DIR/harbor-bridge-launcher" ]; then
+  echo "This release does not include harbor-bridge-launcher, which macOS" >&2
+  echo "needs to grant the bridge Local Network access. Install a newer" >&2
+  echo "release, or build it from source: go build ./cmd/bridge-launcher" >&2
+  exit 1
+fi
+
+# macOS only grants Local Network access to app bundles, so the LaunchAgent
+# starts the launcher from inside a branded, signed bundle. The downloaded
+# go2rtc/gateway binaries stay outside the bundle: replacing them on upgrade
+# must not invalidate the bundle's code signature.
+# shellcheck disable=SC1091
+bundle_version="$(. ./scripts/versions.env && printf '%s' "${HARBOR_HOMEKIT_RELEASE#v}")"
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS"
+ditto "$INSTALL_DIR/harbor-bridge-launcher" "$APP_DIR/Contents/MacOS/$APP_NAME"
+chmod 755 "$APP_DIR/Contents/MacOS/$APP_NAME"
+INFO_PLIST="$APP_DIR/Contents/Info.plist"
+plutil -create xml1 "$INFO_PLIST"
+plutil -insert CFBundleIdentifier -string "$APP_BUNDLE_ID" "$INFO_PLIST"
+plutil -insert CFBundleName -string "$APP_NAME" "$INFO_PLIST"
+plutil -insert CFBundleDisplayName -string "$APP_NAME" "$INFO_PLIST"
+plutil -insert CFBundleExecutable -string "$APP_NAME" "$INFO_PLIST"
+plutil -insert CFBundlePackageType -string APPL "$INFO_PLIST"
+plutil -insert CFBundleShortVersionString -string "$bundle_version" "$INFO_PLIST"
+plutil -insert CFBundleVersion -string "$bundle_version" "$INFO_PLIST"
+plutil -insert LSUIElement -bool true "$INFO_PLIST"
+plutil -insert NSLocalNetworkUsageDescription -string \
+  "Harbor HomeKit Bridge advertises your camera to Apple Home and streams video to it over your local network." \
+  "$INFO_PLIST"
+plutil -insert NSBonjourServices -json '["_hap._tcp"]' "$INFO_PLIST"
+plutil -lint "$INFO_PLIST"
+
+# Prefer the customer's Developer ID identity when one exists; otherwise an
+# ad-hoc signature still gives TCC a stable code identity to attach the
+# Local Network grant to (same content signs to the same identity, so
+# reinstalls of the same version keep the grant).
+signing_identity="$(security find-identity -v -p codesigning 2>/dev/null |
+  awk -F'"' '/Developer ID Application/{print $2; exit}')"
+if [ -n "$signing_identity" ]; then
+  codesign --force --options runtime --timestamp \
+    --identifier "$APP_BUNDLE_ID" --sign "$signing_identity" "$APP_DIR"
+else
+  codesign --force --identifier "$APP_BUNDLE_ID" --sign - "$APP_DIR"
+fi
+codesign --verify --strict "$APP_DIR"
+# Register the bundle so the Local Network pane and prompt show its name.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "$APP_DIR" >/dev/null 2>&1 || true
 
 plutil -create xml1 "$PLIST"
 plutil -insert Label -string "$LABEL" "$PLIST"
-plutil -insert ProgramArguments -json '["/bin/bash"]' "$PLIST"
-plutil -insert ProgramArguments.1 -string "$INSTALL_DIR/run-native.sh" "$PLIST"
+plutil -insert ProgramArguments -json '[]' "$PLIST"
+plutil -insert ProgramArguments.0 -string "$APP_DIR/Contents/MacOS/$APP_NAME" "$PLIST"
 plutil -insert WorkingDirectory -string "$INSTALL_DIR" "$PLIST"
+# Lets Login Items and Local Network attribute the agent to the bundle.
+plutil -insert AssociatedBundleIdentifiers -string "$APP_BUNDLE_ID" "$PLIST"
 plutil -insert RunAtLoad -bool true "$PLIST"
 plutil -insert KeepAlive -bool true "$PLIST"
 plutil -insert ProcessType -string Interactive "$PLIST"
@@ -241,13 +331,31 @@ chmod 600 "$PLIST"
 plutil -lint "$PLIST"
 
 launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+# bootout returns before launchd finishes tearing down a running service;
+# bootstrapping while the label still exists fails with an I/O error.
+for _ in {1..20}; do
+  if ! launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  echo "Could not stop the existing Harbor HomeKit service." >&2
+  exit 1
+fi
 log_stamp="$(date +%Y%m%d-%H%M%S)"
 for log_file in "$LOG_DIR/go2rtc.log" "$LOG_DIR/go2rtc.error.log"; do
   if [ -s "$log_file" ]; then
     mv "$log_file" "$log_file.$log_stamp"
   fi
 done
+# The setup app's Stop Bridge disables the service so it stays stopped across
+# logins; bootstrap fails on a disabled service, so installing re-enables it.
+launchctl enable "$DOMAIN/$LABEL"
 launchctl bootstrap "$DOMAIN" "$PLIST"
+# Background Task Management can defer a newly registered agent's RunAtLoad
+# spawn past the health check below; force the first launch.
+launchctl kickstart "$DOMAIN/$LABEL"
 
 api_ready=false
 for _ in {1..30}; do
@@ -279,7 +387,25 @@ if grep -q 'no interfaces for listen' "$LOG_DIR/go2rtc.error.log" "$LOG_DIR/go2r
 fi
 
 echo "HomeKit discovery started without an mDNS interface error."
-formatted_pin="${homekit_pin:0:3}-${homekit_pin:3:2}-${homekit_pin:5:3}"
+
+# macOS Local Network privacy can silently drop the bridge's mDNS multicast.
+# Browse briefly and warn when the accessory is not visible.
+mdns_browse_log="$(mktemp "${TMPDIR:-/tmp}/harbor-homekit-mdns.XXXXXX")"
+dns-sd -B _hap._tcp local. > "$mdns_browse_log" 2>&1 &
+mdns_browse_pid=$!
+sleep 4
+kill "$mdns_browse_pid" >/dev/null 2>&1 || true
+if ! sed -n '/Instance Name/,$p' "$mdns_browse_log" | grep -q '_hap._tcp'; then
+  echo >&2
+  echo "WARNING: no HomeKit accessory is visible on the network yet." >&2
+  echo "macOS may still be asking for permission, or may be blocking the" >&2
+  echo "bridge's Local Network access. Approve the \"$APP_NAME\" prompt, or" >&2
+  echo "open System Settings > Privacy & Security > Local Network and allow" >&2
+  echo "\"$APP_NAME\", then rerun this installer." >&2
+fi
+rm -f "$mdns_browse_log"
+# Grouped like the Home app's code-entry field (####-####).
+formatted_pin="${homekit_pin:0:4}-${homekit_pin:4:4}"
 echo
 echo "HomeKit setup code: $formatted_pin"
 echo "Keep this code private. It is preserved across service reinstalls."

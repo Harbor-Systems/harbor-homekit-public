@@ -27,8 +27,9 @@ FileVault login screen.
 
 ## macOS installation
 
-Download `Harbor-HomeKit-Setup.zip` from the latest release, open it, and run
-**Harbor HomeKit Setup**. The setup wizard:
+Download `Harbor-HomeKit-Bridge.dmg` from the latest release, open it, and drag
+**Harbor HomeKit Bridge** onto the Applications folder shown in the window. Open
+the app from Applications. The setup wizard:
 
 1. asks for the camera serial number;
 2. installs and starts the always-on bridge;
@@ -81,7 +82,7 @@ The installer:
 At completion it prints:
 
 ```text
-HomeKit setup code: XXX-XX-XXX
+HomeKit setup code: XXXX-XXXX
 
 Harbor camera WHIP endpoint:
 http://BRIDGE_IP:1984/api/webrtc?dst=CAMERA_SERIAL&token=...
@@ -162,7 +163,15 @@ playback, configuration, or other API routes.
 
 ### Harbor Camera does not appear
 
-- Keep the bridge and Apple device on the same LAN/subnet.
+- **Check Local Network permission first.** macOS silently drops the bridge's
+  HomeKit discovery announcements when the service lacks Local Network access.
+  The bridge runs inside the **Harbor HomeKit Bridge** app bundle so macOS can
+  ask for this permission by name — approve the prompt when it appears. If it
+  was dismissed, open **System Settings → Privacy & Security → Local Network**,
+  enable **Harbor HomeKit Bridge**, then rerun the installer. The installer
+  warns at the end when the accessory is not visible on the network.
+- Keep the bridge and Apple device on the same LAN/subnet, and disable VPNs on
+  either device while pairing — VPNs commonly swallow multicast discovery.
 - On macOS, use the native LaunchAgent rather than Docker Desktop.
 - Check `~/Library/Logs/Harbor HomeKit/go2rtc.error.log`.
 - `no interfaces for listen` indicates the unpatched upstream mDNS behavior.

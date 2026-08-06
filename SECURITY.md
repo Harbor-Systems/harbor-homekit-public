@@ -28,6 +28,14 @@ Port 8555 remains reachable for WebRTC encrypted media transport. The HomeKit
 setup code is separate: it protects Apple Home pairing and must not be used as
 the WHIP token.
 
+Apple Home requires two additional LAN listeners, both limited to the HomeKit
+Accessory Protocol: TCP 21063 accepts only the HAP pairing endpoints (all
+post-pairing traffic on it is HAP-session encrypted, and pairing itself is
+protected by the setup code), and UDP 8443 carries HomeKit's SRTP-encrypted
+video. Do not expose 21063 or 8443 to the internet. macOS additionally requires
+the bridge to hold Local Network permission for HomeKit discovery
+(System Settings → Privacy & Security → Local Network).
+
 ## Reporting a vulnerability
 
 Do not open a public issue for a suspected vulnerability. Report it privately

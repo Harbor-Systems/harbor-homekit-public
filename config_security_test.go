@@ -31,8 +31,10 @@ func TestGo2RTCConfigHasExactSecurityBoundary(t *testing.T) {
 		Exec struct {
 			AllowPaths []string `yaml:"allow_paths"`
 		} `yaml:"exec"`
-		Streams map[string]any `yaml:"streams"`
-		HomeKit map[string]any `yaml:"homekit"`
+		FFmpeg        map[string]string `yaml:"ffmpeg"`
+		Streams       map[string]any    `yaml:"streams"`
+		HomeKit       map[string]any    `yaml:"homekit"`
+		HomeKitListen string            `yaml:"homekit_listen"`
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -45,8 +47,9 @@ func TestGo2RTCConfigHasExactSecurityBoundary(t *testing.T) {
 	assertEqual(t, "api.allow_paths", config.API.AllowPaths, []string{"/api/streams", "/api/webrtc"})
 	assertEqual(t, "exec.allow_paths", config.Exec.AllowPaths, []string{"ffmpeg"})
 	assertEqual(t, "app.modules", config.App.Modules, []string{
-		"api", "rtsp", "webrtc", "exec", "ffmpeg", "homekit",
+		"api", "rtsp", "webrtc", "exec", "ffmpeg", "homekit", "srtp",
 	})
+	assertEqual(t, "homekit_listen", config.HomeKitListen, ":21063")
 	if len(config.Streams) != 1 {
 		t.Fatalf("streams keys = %#v, want only CAMERA_SERIAL", config.Streams)
 	}
@@ -55,8 +58,12 @@ func TestGo2RTCConfigHasExactSecurityBoundary(t *testing.T) {
 		t.Fatalf("streams.CAMERA_SERIAL = %#v, want a source list", config.Streams["CAMERA_SERIAL"])
 	}
 	assertEqual(t, "streams.CAMERA_SERIAL", streamSources, []any{
-		"ffmpeg:CAMERA_SERIAL#video=h264#audio=opus",
+		"ffmpeg:CAMERA_SERIAL#video=h264#audio=opus#raw=-vf scale=-2:720,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -bsf:v dump_extra=freq=keyframe -x264-params sliced-threads=0 -ar 16000 -ac 1 -b:a 24k",
 	})
+	// Apple's HomeKit receiver negotiates H264 Main 4.0; go2rtc's built-in
+	// template encodes High 4.1, so the config must override it.
+	assertEqual(t, "ffmpeg.h264", config.FFmpeg["h264"],
+		"-c:v libx264 -g 50 -profile:v main -level:v 4.0 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p")
 	if len(config.HomeKit) != 1 {
 		t.Fatalf("homekit keys = %#v, want only CAMERA_SERIAL", config.HomeKit)
 	}

@@ -6,13 +6,19 @@
 # so the stream name below MUST equal the camera serial.
 #
 app:
-  # Minimize the loaded attack surface. `exec` is required for FFmpeg.
-  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit]
+  # Minimize the loaded attack surface. `exec` is required for FFmpeg;
+  # `srtp` carries HomeKit's encrypted video after pairing.
+  modules: [api, rtsp, webrtc, exec, ffmpeg, homekit, srtp]
 
 api:
   # Never expose go2rtc's powerful API or Web UI to the LAN.
   listen: "127.0.0.1:1985"
   allow_paths: [/api/streams, /api/webrtc]
+
+# Apple Home pairs over this dedicated listener (Harbor's go2rtc patch); it
+# serves only the HAP pairing endpoints, and everything after pairing is
+# HAP-session encrypted. This keeps the API above loopback-only.
+homekit_listen: ":21063"
 
 rtsp:
   # FFmpeg uses RTSP internally; customers do not need LAN access to it.
@@ -22,14 +28,24 @@ exec:
   # Prevent API-controlled execution of anything except FFmpeg.
   allow_paths: [ffmpeg]
 
+# Apple's HomeKit receiver is far stricter than a generic H264 decoder, so
+# the transcode must match the negotiated stream exactly:
+#   scale=-2:720            -> fit inside the negotiated 1280x720
+#   setpts=wall clock       -> truthful RTP timestamps for a VFR camera feed
+#   dump_extra              -> repeat SPS/PPS in-band (HomeKit has no SDP)
+#   sliced-threads=0        -> one slice per frame; Apple's frame assembler
+#                              rejects multi-slice frames ("Too many slices")
+#   -ar 16000 -ac 1 -b:a 24k -> the negotiated 16 kHz mono Opus
+ffmpeg:
+  h264: "-c:v libx264 -g 50 -profile:v main -level:v 4.0 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+
 streams:
   # The camera pushes into this stream via WHIP as H265 + OPUS.
   # HomeKit only supports H264 + OPUS, so we must transcode the video:
   #   #video=h264  -> transcode H265 video to H264 (required for HomeKit)
-  #   #audio=opus  -> keep OPUS audio (copied, since it already matches)
-  # Add #hardware for GPU-accelerated encoding if CPU use is too high.
+  #   #audio=opus  -> re-encode OPUS to HomeKit's negotiated format
   "CAMERA_SERIAL":
-    - ffmpeg:CAMERA_SERIAL#video=h264#audio=opus
+    - ffmpeg:CAMERA_SERIAL#video=h264#audio=opus#raw=-vf scale=-2:720,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -bsf:v dump_extra=freq=keyframe -x264-params sliced-threads=0 -ar 16000 -ac 1 -b:a 24k
 
 homekit:
   "CAMERA_SERIAL":

@@ -39,7 +39,9 @@ jobs:
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-mac-amd64 ./cmd/whip-gateway
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-arm64 ./cmd/whip-gateway
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/gateway-linux-amd64 ./cmd/whip-gateway
-          ./scripts/build-macos-setup-app.sh "dist/Harbor HomeKit Setup.app"
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o dist/launcher-mac-arm64 ./cmd/bridge-launcher
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/launcher-mac-amd64 ./cmd/bridge-launcher
+          ./scripts/build-macos-setup-app.sh "dist/Harbor HomeKit Bridge.app"
       - name: Sign macOS binaries
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
@@ -75,7 +77,7 @@ jobs:
             printf '%s\n' "$details" | grep -Fqx "Authority=$expected_identity"
             printf '%s\n' "$details" | grep -Fqx "TeamIdentifier=$expected_team"
           done
-          for binary in dist/gateway-mac-*; do
+          for binary in dist/gateway-mac-* dist/launcher-mac-*; do
             codesign --force --options runtime --timestamp \
               --sign "$APPLE_SIGNING_IDENTITY" "$binary"
             codesign --verify --strict --verbose=2 "$binary"
@@ -84,28 +86,39 @@ jobs:
             printf '%s\n' "$details" | grep -Fqx "TeamIdentifier=$expected_team"
           done
           codesign --force --deep --options runtime --timestamp \
-            --sign "$APPLE_SIGNING_IDENTITY" "dist/Harbor HomeKit Setup.app"
-          codesign --verify --deep --strict --verbose=2 "dist/Harbor HomeKit Setup.app"
-          app_details="$(codesign -dv --verbose=4 "dist/Harbor HomeKit Setup.app" 2>&1)"
+            --sign "$APPLE_SIGNING_IDENTITY" "dist/Harbor HomeKit Bridge.app"
+          codesign --verify --deep --strict --verbose=2 "dist/Harbor HomeKit Bridge.app"
+          app_details="$(codesign -dv --verbose=4 "dist/Harbor HomeKit Bridge.app" 2>&1)"
           printf '%s\n' "$app_details" | grep -Fqx "Authority=$expected_identity"
           printf '%s\n' "$app_details" | grep -Fqx "TeamIdentifier=$expected_team"
       - name: Package archives
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
+          : "${APPLE_SIGNING_IDENTITY:?APPLE_SIGNING_IDENTITY is required}"
           for platform in mac_arm64 mac_amd64 linux_arm64 linux_amd64; do
             package_dir="$RUNNER_TEMP/$platform"
             mkdir -p "$package_dir"
             binary_platform="${platform/_/-}"
             cp "dist/go2rtc-$binary_platform" "$package_dir/go2rtc"
             cp "dist/gateway-$binary_platform" "$package_dir/harbor-whip-gateway"
+            zip_contents=(go2rtc harbor-whip-gateway)
+            if [ -f "dist/launcher-$binary_platform" ]; then
+              cp "dist/launcher-$binary_platform" "$package_dir/harbor-bridge-launcher"
+              zip_contents+=(harbor-bridge-launcher)
+            fi
             (
               cd "$package_dir"
               zip -q "$GITHUB_WORKSPACE/dist/harbor-homekit-go2rtc_${platform}.zip" \
-                go2rtc harbor-whip-gateway
+                "${zip_contents[@]}"
             )
           done
-          ditto -c -k --sequesterRsrc --keepParent \
-            "dist/Harbor HomeKit Setup.app" "dist/Harbor-HomeKit-Setup.zip"
+          ./scripts/build-macos-setup-dmg.sh \
+            "dist/Harbor HomeKit Bridge.app" "dist/Harbor-HomeKit-Bridge.dmg"
+          codesign --force --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" "dist/Harbor-HomeKit-Bridge.dmg"
+          codesign --verify --strict --verbose=2 "dist/Harbor-HomeKit-Bridge.dmg"
       - name: Notarize macOS archives
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -122,20 +135,21 @@ jobs:
               --password "$APPLE_APP_PASSWORD" \
               --team-id "$APPLE_TEAM_ID"
           done
-          xcrun notarytool submit "dist/Harbor-HomeKit-Setup.zip" --wait \
+          xcrun notarytool submit "dist/Harbor-HomeKit-Bridge.dmg" --wait \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID"
+          xcrun stapler staple "dist/Harbor-HomeKit-Bridge.dmg"
       - name: Generate checksums
         run: |
           cd dist
-          shasum -a 256 -- *.zip > checksums.txt
+          shasum -a 256 -- *.zip *.dmg > checksums.txt
       - name: Attest release provenance
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
           subject-path: |
             dist/harbor-homekit-go2rtc_*.zip
-            dist/Harbor-HomeKit-Setup.zip
+            dist/Harbor-HomeKit-Bridge.dmg
             dist/checksums.txt
       - name: Publish GitHub release
         env:
@@ -145,5 +159,5 @@ jobs:
             --title "Harbor HomeKit $GITHUB_REF_NAME" \
             --generate-notes \
             dist/harbor-homekit-go2rtc_*.zip \
-            dist/Harbor-HomeKit-Setup.zip \
+            dist/Harbor-HomeKit-Bridge.dmg \
             dist/checksums.txt

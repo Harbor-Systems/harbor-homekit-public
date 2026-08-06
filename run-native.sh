@@ -20,6 +20,7 @@ cd "$(dirname "$0")"
 
 BIN="./go2rtc"
 GATEWAY_BIN="./harbor-whip-gateway"
+LAUNCHER_BIN="./harbor-bridge-launcher"
 TOKEN_FILE="./.harbor-whip-token"
 STATUS_FILE="./.harbor-whip-connected"
 REPOSITORY="Harbor-Systems/harbor-homekit-public"
@@ -52,7 +53,8 @@ verify_macos_binary() {
 if ! grep -Fq 'listen: "127.0.0.1:1985"' go2rtc.yaml ||
    ! grep -Fq 'listen: "127.0.0.1:8554"' go2rtc.yaml ||
    ! grep -Fq 'allow_paths: [/api/streams, /api/webrtc]' go2rtc.yaml ||
-   ! grep -Fq 'allow_paths: [ffmpeg]' go2rtc.yaml; then
+   ! grep -Fq 'allow_paths: [ffmpeg]' go2rtc.yaml ||
+   ! grep -Fq 'homekit_listen: ":21063"' go2rtc.yaml; then
   echo "go2rtc.yaml does not contain Harbor's required security settings." >&2
   echo "Merge the hardened blocks from the repository template before running." >&2
   exit 1
@@ -73,7 +75,8 @@ case "$arch" in
 esac
 asset="harbor-homekit-go2rtc_${os_tag}_${arch_tag}.zip"
 
-if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
+if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ] || \
+   { [ "$os_tag" = "mac" ] && [ ! -x "$LAUNCHER_BIN" ]; }; then
   base_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE}"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
@@ -103,6 +106,15 @@ if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
   mv "$tmp/unpacked/go2rtc" "$BIN"
   mv "$tmp/unpacked/harbor-whip-gateway" "$GATEWAY_BIN"
   chmod +x "$BIN" "$GATEWAY_BIN"
+  # macOS releases since the app-bundle restructure also ship the launcher
+  # that "Harbor HomeKit Bridge.app" wraps for Local Network attribution.
+  if [ -f "$tmp/unpacked/harbor-bridge-launcher" ]; then
+    if [ "$os_tag" = "mac" ]; then
+      verify_macos_binary "$tmp/unpacked/harbor-bridge-launcher"
+    fi
+    mv "$tmp/unpacked/harbor-bridge-launcher" "$LAUNCHER_BIN"
+    chmod +x "$LAUNCHER_BIN"
+  fi
 fi
 
 if [ "$os_tag" = "mac" ]; then
@@ -114,6 +126,12 @@ if [ ! -x "$GATEWAY_BIN" ]; then
   echo "Harbor WHIP gateway is missing. Remove ./go2rtc and rerun to download" >&2
   echo "the complete pinned release, or build the gateway from source." >&2
   exit 1
+fi
+
+# The installer materializes binaries up front with this hook so the app
+# bundle can be assembled before the service ever starts.
+if [ "${HARBOR_DOWNLOAD_ONLY:-0}" = "1" ]; then
+  exit 0
 fi
 
 # ffmpeg is needed for transcoding fallbacks. Warn if missing.
