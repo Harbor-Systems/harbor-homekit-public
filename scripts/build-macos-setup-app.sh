@@ -55,7 +55,7 @@ cat > "$contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>Harbor HomeKit Bridge</string>
   <key>CFBundleIconFile</key><string>HarborHomeKit</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.3.1</string>
+  <key>CFBundleShortVersionString</key><string>0.4.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSLocalNetworkUsageDescription</key><string>Harbor HomeKit Bridge connects your Harbor camera to this Mac on your local network.</string>

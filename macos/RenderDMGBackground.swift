@@ -51,15 +51,17 @@ NSColor.white.setFill()
 canvas.fill()
 NSGradient(starting: highlight, ending: .white)?.draw(in: canvas, angle: -90)
 
-if let logo = NSImage(contentsOf: URL(fileURLWithPath: logoPath)) {
-    let logoSize = NSSize(width: 174, height: 42)
-    logo.draw(in: NSRect(
-        x: (pointSize.width - logoSize.width) / 2,
-        y: pointSize.height - logoSize.height - 30,
-        width: logoSize.width,
-        height: logoSize.height
-    ))
+guard let logo = NSImage(contentsOf: URL(fileURLWithPath: logoPath)) else {
+    FileHandle.standardError.write(Data("Could not load the Harbor logo.\n".utf8))
+    exit(1)
 }
+let logoSize = NSSize(width: 174, height: 42)
+logo.draw(in: NSRect(
+    x: (pointSize.width - logoSize.width) / 2,
+    y: pointSize.height - logoSize.height - 30,
+    width: logoSize.width,
+    height: logoSize.height
+))
 
 // Arrow from the app icon toward the Applications folder.
 let arrowY = appIconCenter.y

@@ -75,7 +75,8 @@ case "$arch" in
 esac
 asset="harbor-homekit-go2rtc_${os_tag}_${arch_tag}.zip"
 
-if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ]; then
+if [ ! -x "$BIN" ] || [ ! -x "$GATEWAY_BIN" ] || \
+   { [ "$os_tag" = "mac" ] && [ ! -x "$LAUNCHER_BIN" ]; }; then
   base_url="https://github.com/${REPOSITORY}/releases/download/${RELEASE}"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT

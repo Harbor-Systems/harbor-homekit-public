@@ -42,8 +42,27 @@ if ! grep -Fq 'for patch in "$ROOT_DIR"/patches/*.patch' scripts/build-go2rtc.sh
   exit 1
 fi
 
-if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.3.2" ]; then
-  echo "Native installer must use the signed and notarized v0.3.2 release" >&2
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.4.0" ]; then
+  echo "Native installer must use the signed and notarized v0.4.0 release" >&2
+  exit 1
+fi
+
+for required_homekit_patch_text in \
+  'net.Listen("tcp", cfg.Listen)' \
+  'ReadHeaderTimeout: 10 * time.Second'; do
+  if ! grep -Fq "$required_homekit_patch_text" patches/go2rtc-1.9.14-homekit-lan-listener.patch; then
+    echo "HomeKit LAN listener patch is missing: $required_homekit_patch_text" >&2
+    exit 1
+  fi
+done
+
+if ! grep -Fq "[ \"\$os_tag\" = \"mac\" ] && [ ! -x \"\$LAUNCHER_BIN\" ]" run-native.sh; then
+  echo "Native runner must download a missing macOS bridge launcher" >&2
+  exit 1
+fi
+
+if ! grep -Fq '<string>0.4.0</string>' scripts/build-macos-setup-app.sh; then
+  echo "macOS app version must match release v0.4.0" >&2
   exit 1
 fi
 

@@ -2,15 +2,16 @@ diff --git a/internal/homekit/homekit.go b/internal/homekit/homekit.go
 index 59b84b3..e9095dc 100644
 --- a/internal/homekit/homekit.go
 +++ b/internal/homekit/homekit.go
-@@ -2,6 +2,7 @@ package homekit
+@@ -2,6 +2,8 @@ package homekit
  
  import (
  	"errors"
 +	"net"
  	"net/http"
  	"strings"
++	"time"
  
-@@ -19,7 +20,12 @@ import (
+@@ -19,7 +21,12 @@ import (
  
  func Init() {
  	var cfg struct {
@@ -24,13 +25,13 @@ index 59b84b3..e9095dc 100644
  			Pin           string   `yaml:"pin"`
  			Name          string   `yaml:"name"`
  			DeviceID      string   `yaml:"device_id"`
-@@ -42,6 +48,25 @@ func Init() {
+@@ -42,6 +49,29 @@ func Init() {
  		return
  	}
  
 +	hapPort := api.Port
 +	if cfg.Listen != "" {
-+		ln, err := net.Listen("tcp4", cfg.Listen)
++		ln, err := net.Listen("tcp", cfg.Listen)
 +		if err != nil {
 +			log.Error().Err(err).Caller().Send()
 +			return
@@ -40,7 +41,11 @@ index 59b84b3..e9095dc 100644
 +		mux.HandleFunc(hap.PathPairSetup, hapHandler)
 +		mux.HandleFunc(hap.PathPairVerify, hapHandler)
 +		go func() {
-+			if err := (&http.Server{Handler: mux}).Serve(ln); err != nil {
++			server := &http.Server{
++				Handler:           mux,
++				ReadHeaderTimeout: 10 * time.Second,
++			}
++			if err := server.Serve(ln); err != nil {
 +				log.Error().Err(err).Caller().Send()
 +			}
 +		}()
@@ -50,7 +55,7 @@ index 59b84b3..e9095dc 100644
  	hosts = map[string]*server{}
  	servers = map[string]*server{}
  	var entries []*mdns.ServiceEntry
-@@ -82,7 +107,7 @@ func Init() {
+@@ -82,7 +112,7 @@ func Init() {
  
  		srv.mdns = &mdns.ServiceEntry{
  			Name: name,
