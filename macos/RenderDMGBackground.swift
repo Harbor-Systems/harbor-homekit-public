@@ -5,11 +5,11 @@ import AppKit
 // install instruction. Drawn at 2x and tagged with point dimensions so Finder
 // shows it crisp on Retina displays.
 //
-// Usage: swift RenderDMGBackground.swift <HarborLogo.svg> <output.png>
+// Usage: swift RenderDMGBackground.swift <HarborLogo.png> <output.png>
 
 let arguments = CommandLine.arguments
 guard arguments.count == 3 else {
-    FileHandle.standardError.write(Data("Usage: RenderDMGBackground <logo.svg> <output.png>\n".utf8))
+    FileHandle.standardError.write(Data("Usage: RenderDMGBackground <logo.png> <output.png>\n".utf8))
     exit(1)
 }
 let logoPath = arguments[1]

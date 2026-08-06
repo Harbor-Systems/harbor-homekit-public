@@ -12,6 +12,11 @@ INSTALL_DIR="$HOME/Library/Application Support/Harbor HomeKit"
 LOG_DIR="$HOME/Library/Logs/Harbor HomeKit"
 PURGE=false
 
+if [ "$#" -gt 1 ]; then
+  echo "Usage: $0 [--purge]" >&2
+  exit 1
+fi
+
 case "${1:-}" in
   --purge) PURGE=true ;;
   "") ;;

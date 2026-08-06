@@ -8,7 +8,7 @@ private enum HarborBrand {
 
 private struct HarborHeader: View {
     private var logo: NSImage? {
-        guard let url = Bundle.main.url(forResource: "HarborLogo", withExtension: "svg") else { return nil }
+        guard let url = Bundle.main.url(forResource: "HarborLogo", withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }
 
@@ -64,6 +64,7 @@ final class SetupModel: ObservableObject {
     }
 
     private func loadInstalledSetupCode() {
+        installedSetupCode = ""
         let config = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Harbor HomeKit/go2rtc.yaml")
         guard let text = try? String(contentsOf: config, encoding: .utf8) else { return }
@@ -154,7 +155,10 @@ final class SetupModel: ObservableObject {
     }
 
     private nonisolated static func bridgePortOwners() -> [pid_t] {
-        let result = runCommand("/usr/sbin/lsof", ["-t", "-i", "tcp:1984", "-i", "tcp:1985"])
+        let result = runCommand(
+            "/usr/sbin/lsof",
+            ["-t", "-sTCP:LISTEN", "-i", "tcp:1984", "-i", "tcp:1985"]
+        )
         let pids = result.output.split(separator: "\n")
             .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
         return Array(Set(pids)).filter { $0 > 0 && $0 != ProcessInfo.processInfo.processIdentifier }
@@ -183,8 +187,8 @@ final class SetupModel: ObservableObject {
         process.standardError = pipe
         do {
             try process.run()
-            process.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
             return (process.terminationStatus, String(decoding: data, as: UTF8.self))
         } catch {
             return (1, error.localizedDescription)
@@ -242,10 +246,15 @@ final class SetupModel: ObservableObject {
             .appendingPathComponent(source.lastPathComponent)
         do {
             let fileManager = FileManager.default
+            let staging = destination.deletingLastPathComponent()
+                .appendingPathComponent(".\(source.lastPathComponent).\(UUID().uuidString)")
+            defer { try? fileManager.removeItem(at: staging) }
+            try fileManager.copyItem(at: source, to: staging)
             if fileManager.fileExists(atPath: destination.path) {
-                try fileManager.removeItem(at: destination)
+                _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
+            } else {
+                try fileManager.moveItem(at: staging, to: destination)
             }
-            try fileManager.copyItem(at: source, to: destination)
         } catch {
             errorMessage = "Could not move the app automatically (\(error.localizedDescription)). In Finder, drag Harbor HomeKit Bridge into the Applications folder, then open it from there."
             return

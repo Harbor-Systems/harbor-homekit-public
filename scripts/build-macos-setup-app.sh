@@ -27,7 +27,7 @@ cp "$root/configure-camera-serial.sh" "$contents/Resources/installer/"
 cp "$root/generate-homekit-pin.sh" "$contents/Resources/installer/"
 cp "$root/run-native.sh" "$contents/Resources/installer/"
 cp "$root/go2rtc.yaml" "$contents/Resources/installer/"
-cp "$root/macos/HarborLogo.svg" "$contents/Resources/"
+cp "$root/macos/HarborLogo.png" "$contents/Resources/"
 mkdir -p "$contents/Resources/installer/scripts"
 cp "$root/scripts/versions.env" "$contents/Resources/installer/scripts/"
 
@@ -50,9 +50,10 @@ cat > "$contents/Info.plist" <<'PLIST'
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>Harbor HomeKit Bridge</string>
-  <key>CFBundleIdentifier</key><string>co.projectmonitor.harbor-homekit-bridge</string>
+  <key>CFBundleIdentifier</key><string>co.harbor.homekit.bridge.setup</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Harbor HomeKit Bridge</string>
+  <key>CFBundleDisplayName</key><string>Harbor HomeKit Bridge Setup</string>
   <key>CFBundleIconFile</key><string>HarborHomeKit</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.4.0</string>

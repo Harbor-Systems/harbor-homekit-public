@@ -34,7 +34,7 @@ mkdir -p "$staging/.background"
 ditto "$app" "$staging/Harbor HomeKit Bridge.app"
 ln -s /Applications "$staging/Applications"
 swift "$root/macos/RenderDMGBackground.swift" \
-  "$root/macos/HarborLogo.svg" "$staging/.background/background.png"
+  "$root/macos/HarborLogo.png" "$staging/.background/background.png"
 
 rw_image="$work/rw.dmg"
 hdiutil create -volname "$volume_name" -srcfolder "$staging" \

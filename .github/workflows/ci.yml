@@ -54,3 +54,9 @@ jobs:
           lipo -archs "$RUNNER_TEMP/Harbor HomeKit Bridge.app/Contents/MacOS/Harbor HomeKit Bridge" \
             | grep -Fq 'x86_64 arm64'
           plutil -lint "$RUNNER_TEMP/Harbor HomeKit Bridge.app/Contents/Info.plist"
+      - name: Validate DMG background
+        run: |
+          swift macos/RenderDMGBackground.swift \
+            macos/HarborLogo.png "$RUNNER_TEMP/background.png"
+          test "$(sips -g pixelWidth "$RUNNER_TEMP/background.png" | awk '/pixelWidth/{print $2}')" = "1200"
+          test "$(sips -g pixelHeight "$RUNNER_TEMP/background.png" | awk '/pixelHeight/{print $2}')" = "800"

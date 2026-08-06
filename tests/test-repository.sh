@@ -66,6 +66,23 @@ if ! grep -Fq '<string>0.4.0</string>' scripts/build-macos-setup-app.sh; then
   exit 1
 fi
 
+for required_setup_safety_text in \
+  'installedSetupCode = ""' \
+  '"-sTCP:LISTEN"' \
+  'readDataToEndOfFile()' \
+  'replaceItemAt(destination, withItemAt: staging)'; do
+  if ! grep -Fq "$required_setup_safety_text" macos/HarborHomeKitSetup.swift; then
+    echo "macOS bridge UI is missing safety behavior: $required_setup_safety_text" >&2
+    exit 1
+  fi
+done
+
+if [ ! -s macos/HarborLogo.png ] || \
+   ! grep -Fq 'macos/HarborLogo.png' scripts/build-macos-setup-dmg.sh; then
+  echo "DMG renderer must use the committed PNG wordmark" >&2
+  exit 1
+fi
+
 if ! grep -Fq 'shasum -a 256 -- *.zip *.dmg > checksums.txt' .github/workflows/release.yml; then
   echo "Release checksums must use archive basenames" >&2
   exit 1
