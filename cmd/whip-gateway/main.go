@@ -297,7 +297,7 @@ func (g *gateway) preloadH264() {
 		query := url.Values{"src": []string{g.stream}, "video": []string{"h264"}}
 		target.RawQuery = query.Encode()
 
-		request, err := http.NewRequest(http.MethodPut, target.String(), nil)
+		request, err := http.NewRequestWithContext(context.Background(), http.MethodPut, target.String(), nil)
 		if err == nil {
 			response, requestErr := g.httpClient.Do(request)
 			if requestErr == nil {
