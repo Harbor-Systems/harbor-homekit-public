@@ -50,6 +50,25 @@ func TestSuccessfulPublishWritesPrivateStatusMarker(t *testing.T) {
 	}
 }
 
+func TestPreloadH264UsesLoopbackAPI(t *testing.T) {
+	called := false
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodPut || r.URL.Path != "/api/preload" ||
+			r.URL.Query().Get("src") != "CAM123" || r.URL.Query().Get("video") != "h264" {
+			t.Fatalf("unexpected preload request: %s %s", r.Method, r.URL.String())
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	gateway, server := testGateway(t, upstream)
+	defer server.Close()
+
+	gateway.preloadH264()
+	if !called {
+		t.Fatal("preload endpoint was not called")
+	}
+}
+
 // TestPublishForwardsOnlyExpectedRequest verifies sanitized WHIP forwarding.
 func TestPublishForwardsOnlyExpectedRequest(t *testing.T) {
 	var gotMethod, gotQuery, gotBody string
