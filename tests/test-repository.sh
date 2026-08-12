@@ -42,8 +42,8 @@ if ! grep -Fq 'for patch in "$ROOT_DIR"/patches/*.patch' scripts/build-go2rtc.sh
   exit 1
 fi
 
-if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.5.0" ]; then
-  echo "Native installer must use the signed and notarized v0.5.0 release" >&2
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.5.1" ]; then
+  echo "Native installer must use the signed and notarized v0.5.1 release" >&2
   exit 1
 fi
 
@@ -61,8 +61,18 @@ if ! grep -Fq "[ \"\$os_tag\" = \"mac\" ] && [ ! -x \"\$LAUNCHER_BIN\" ]" run-na
   exit 1
 fi
 
-if ! grep -Fq '<string>0.5.0</string>' scripts/build-macos-setup-app.sh; then
-  echo "macOS app version must match release v0.5.0" >&2
+# A fresh v0.5+ template must pass the installer's hardened-config check. Keep
+# these strings identical so the installer never rejects its own config as
+# customer customization.
+required_api_allowlist='allow_paths: [/api/streams, /api/webrtc, /api/preload]'
+if ! grep -Fq "$required_api_allowlist" go2rtc.yaml ||
+   [ "$(grep -Fc "$required_api_allowlist" install-macos-service.sh)" -ne 2 ]; then
+  echo "Installer and template API allowlists are out of sync" >&2
+  exit 1
+fi
+
+if ! grep -Fq '<string>0.5.1</string>' scripts/build-macos-setup-app.sh; then
+  echo "macOS app version must match release v0.5.1" >&2
   exit 1
 fi
 
