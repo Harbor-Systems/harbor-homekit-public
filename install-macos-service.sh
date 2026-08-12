@@ -215,6 +215,13 @@ if ! is_valid_pin "$written_pin" || [ "$written_pin" != "$homekit_pin" ]; then
   echo "HomeKit pin setting could not be written to $INSTALL_DIR/go2rtc.yaml" >&2
   exit 1
 fi
+
+# Subsequent wizard runs add a camera without replacing the existing config,
+# pairing database, PIN, or previously configured cameras.
+if [ -n "$CAMERA_SERIAL" ]; then
+  ./add-camera-config.sh "$INSTALL_DIR/go2rtc.yaml" "$CAMERA_SERIAL" "$homekit_pin"
+fi
+
 stream_name="$(
   awk '
     /^streams:/ { in_streams=1; next }
@@ -228,6 +235,10 @@ stream_name="$(
     }
   ' "$INSTALL_DIR/go2rtc.yaml"
 )"
+if [ -n "$CAMERA_SERIAL" ] &&
+   grep -Fq "  \"$CAMERA_SERIAL\":" "$INSTALL_DIR/go2rtc.yaml"; then
+  stream_name="$CAMERA_SERIAL"
+fi
 if [ -z "$stream_name" ]; then
   echo "Could not determine the configured Harbor camera serial." >&2
   exit 1
@@ -235,9 +246,11 @@ fi
 chmod 600 "$INSTALL_DIR/go2rtc.yaml"
 ditto ./run-native.sh "$INSTALL_DIR/run-native.sh"
 ditto ./generate-homekit-pin.sh "$INSTALL_DIR/generate-homekit-pin.sh"
+ditto ./add-camera-config.sh "$INSTALL_DIR/add-camera-config.sh"
 ditto ./scripts/versions.env "$INSTALL_DIR/scripts/versions.env"
 chmod 700 "$INSTALL_DIR/run-native.sh"
 chmod 700 "$INSTALL_DIR/generate-homekit-pin.sh"
+chmod 700 "$INSTALL_DIR/add-camera-config.sh"
 chmod 600 "$INSTALL_DIR/scripts/versions.env"
 
 # Reuse an already-downloaded binary when present. Otherwise run-native.sh will

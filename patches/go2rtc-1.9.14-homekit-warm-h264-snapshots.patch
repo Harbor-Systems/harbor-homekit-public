@@ -1,0 +1,49 @@
+diff --git a/internal/homekit/server.go b/internal/homekit/server.go
+index 86cfbc15..22f945cc 100644
+--- a/internal/homekit/server.go
++++ b/internal/homekit/server.go
+@@ -329,7 +329,7 @@ func (s *server) GetImage(conn net.Conn, width, height int) []byte {
+ 	log.Trace().Str("stream", s.stream).Msgf("[homekit] get image width=%d height=%d", width, height)
+ 
+ 	stream := streams.Get(s.stream)
+-	cons := magic.NewKeyframe()
++	cons := newSnapshotConsumer()
+ 
+ 	if err := stream.AddConsumer(cons); err != nil {
+ 		return nil
+@@ -351,6 +351,16 @@ func (s *server) GetImage(conn net.Conn, width, height int) []byte {
+ 	return b
+ }
+ 
++func newSnapshotConsumer() *magic.Keyframe {
++	cons := magic.NewKeyframe()
++	// Don't take snapshots from Harbor's raw H265 ingest. Its first decoded
++	// frame can be gray and its keyframe interval can exceed Apple Home's
++	// request deadline. Use the continuously preloaded H264 FFmpeg path so
++	// every controller request receives a fresh, self-contained keyframe.
++	cons.Medias[0].Codecs = []*core.Codec{{Name: core.CodecH264}}
++	return cons
++}
++
+ func calcName(name, seed string) string {
+ 	if name != "" {
+ 		return name
+diff --git a/internal/homekit/snapshot_consumer_test.go b/internal/homekit/snapshot_consumer_test.go
+new file mode 100644
+index 00000000..8d500e65
+--- /dev/null
++++ b/internal/homekit/snapshot_consumer_test.go
+@@ -0,0 +1,13 @@
++package homekit
++
++import (
++	"testing"
++)
++
++func TestSnapshotConsumerRequiresH264(t *testing.T) {
++	cons := newSnapshotConsumer()
++	codecs := cons.Medias[0].Codecs
++	if len(codecs) != 1 || codecs[0].Name != "H264" {
++		t.Fatalf("snapshot codecs = %#v, want H264 only", codecs)
++	}
++}

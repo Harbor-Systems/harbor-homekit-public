@@ -24,13 +24,15 @@ private struct HarborHeader: View {
 
 @MainActor
 final class SetupModel: ObservableObject {
-    enum Step { case moveToApplications, camera, installing, harborApp, homeKit, bridge }
+    enum Step { case moveToApplications, camera, installing, harborApp, network, homeKit, bridge }
 
     @Published var step: Step = .camera
     @Published var bridgeRunning = false
     @Published var bridgeManaged = false
     @Published var bridgeBusy = false
     @Published var installedSetupCode = ""
+    @Published var configuredSerials: [String] = []
+    @Published var networkReservationConfirmed = false
 
     // On a read-only volume (the mounted disk image, or Gatekeeper's
     // translocation mount) installation is the only sensible path forward.
@@ -65,11 +67,24 @@ final class SetupModel: ObservableObject {
 
     private func loadInstalledSetupCode() {
         installedSetupCode = ""
+        configuredSerials = []
         let config = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Harbor HomeKit/go2rtc.yaml")
         guard let text = try? String(contentsOf: config, encoding: .utf8) else { return }
+        var inStreams = false
         for line in text.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "streams:" {
+                inStreams = true
+                continue
+            }
+            if inStreams && !line.hasPrefix(" ") && !trimmed.hasPrefix("#") {
+                inStreams = false
+            }
+            if inStreams, line.hasPrefix("  \""), trimmed.hasSuffix("\":") {
+                let value = trimmed.dropFirst().dropLast(2)
+                configuredSerials.append(String(value))
+            }
             guard trimmed.hasPrefix("pin:") else { continue }
             let digits = trimmed.dropFirst(4).prefix { $0 != "#" }.filter(\.isNumber)
             if digits.count == 8 {
@@ -204,6 +219,10 @@ final class SetupModel: ObservableObject {
         !serial.isEmpty && serial.allSatisfy { $0.isNumber || $0 == "-" || $0 == "_" }
     }
 
+    var bridgeIPAddress: String {
+        URL(string: endpoint)?.host ?? "the IP address shown in the WHIP endpoint"
+    }
+
     func install() {
         guard serialIsValid else { return }
         step = .installing
@@ -283,13 +302,29 @@ final class SetupModel: ObservableObject {
 
     func verifyCamera() {
         let marker = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Harbor HomeKit/.harbor-whip-connected")
+            .appendingPathComponent("Library/Application Support/Harbor HomeKit/.harbor-whip-connected.\(serial)")
         if FileManager.default.fileExists(atPath: marker.path) {
-            step = .homeKit
+            if !configuredSerials.contains(serial) {
+                configuredSerials.append(serial)
+            }
+            step = networkReservationConfirmed ? .homeKit : .network
             errorMessage = ""
         } else {
             errorMessage = "No camera stream has reached this Mac yet. Save the complete WHIP URL in the Harbor app, wait a few seconds, then check again."
         }
+    }
+
+    func confirmNetworkReservation() {
+        networkReservationConfirmed = true
+        step = .homeKit
+    }
+
+    func addAnotherCamera() {
+        serial = ""
+        endpoint = ""
+        detail = ""
+        errorMessage = ""
+        step = .camera
     }
 
     func copy(_ value: String) {
@@ -356,6 +391,7 @@ struct SetupView: View {
             case .camera: cameraStep
             case .installing: installingStep
             case .harborApp: harborAppStep
+            case .network: networkStep
             case .homeKit: homeKitStep
             case .bridge: bridgeStep
             }
@@ -397,13 +433,19 @@ struct SetupView: View {
 
     private var cameraStep: some View {
         Group {
-            Text("Connect your Harbor camera to Apple Home. The bridge will start automatically whenever you log into this Mac.")
+            Text(model.configuredSerials.isEmpty
+                 ? "Connect your Harbor cameras to Apple Home. The bridge will start automatically whenever you log into this Mac."
+                 : "Add another Harbor camera to this HomeKit bridge.")
+            if !model.configuredSerials.isEmpty {
+                Text("Already configured: \(model.configuredSerials.joined(separator: ", "))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Text("Camera serial number").font(.headline)
             TextField("For example, 2400000000", text: $model.serial)
                 .textFieldStyle(.roundedBorder)
             Text("You can find the serial in the Harbor app under Camera Settings.")
                 .foregroundStyle(.secondary)
-            Button("Install Bridge") { model.install() }
+            Button(model.configuredSerials.isEmpty ? "Install Bridge" : "Add Camera") { model.install() }
                 .buttonStyle(.borderedProminent).disabled(!model.serialIsValid)
         }
     }
@@ -452,11 +494,32 @@ struct SetupView: View {
                 .padding(.vertical, 8)
             HStack {
                 Button("Copy Setup Code") { model.copy(model.setupCode) }
+                Button("Add Another Camera") { model.addAnotherCamera() }
                 Button("Done") { model.showBridgePanel() }
                     .buttonStyle(.borderedProminent)
             }
             Text("Keep this code private. Reinstalling preserves it so the camera remains paired.")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var networkStep: some View {
+        Group {
+            Label("Camera connected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            Text("Keep this Mac at the same IP address").font(.title2).bold()
+            Text("Required before you continue")
+                .font(.headline).foregroundStyle(.orange)
+            Text("Your camera connects to this Mac at \(model.bridgeIPAddress). If your router gives the Mac a different address after a restart, the camera will stop working in Apple Home.")
+            VStack(alignment: .leading, spacing: 7) {
+                Text("1. Open your router or Wi-Fi system's app.")
+                Text("2. Find this Mac under connected devices.")
+                Text("3. Create a DHCP/IP reservation for \(model.bridgeIPAddress).")
+                Text("4. Save the reservation. Do not create a port-forwarding rule.")
+            }
+            Text("This may be called DHCP reservation, IP reservation, reserved address, or static lease. It keeps the address stable without manually changing macOS network settings.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("I've Reserved This IP") { model.confirmNetworkReservation() }
+                .buttonStyle(.borderedProminent)
         }
     }
 

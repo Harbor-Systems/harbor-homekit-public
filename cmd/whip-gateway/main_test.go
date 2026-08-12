@@ -7,7 +7,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -21,7 +23,7 @@ func testGateway(t *testing.T, upstream http.Handler) (*gateway, *httptest.Serve
 		t.Fatal(err)
 	}
 	return &gateway{
-		token: testToken, stream: "CAM123", upstream: target,
+		token: testToken, streams: map[string]struct{}{"CAM123": {}, "CAM456": {}}, upstream: target,
 		httpClient: server.Client(),
 	}, server
 }
@@ -41,12 +43,72 @@ func TestSuccessfulPublishWritesPrivateStatusMarker(t *testing.T) {
 		http.MethodPost, "/api/webrtc?dst=CAM123&token="+testToken,
 		strings.NewReader("offer"),
 	))
-	info, err := os.Stat(gateway.statusFile)
+	info, err := os.Stat(gateway.statusFile + ".CAM123")
 	if err != nil {
 		t.Fatalf("status marker was not written: %v", err)
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("status marker permissions = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestPreloadH264UsesLoopbackAPI(t *testing.T) {
+	called := false
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodPut || r.URL.Path != "/api/preload" ||
+			r.URL.Query().Get("src") != "CAM123" || r.URL.Query().Get("video") != "h264" {
+			t.Fatalf("unexpected preload request: %s %s", r.Method, r.URL.String())
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	gateway, server := testGateway(t, upstream)
+	defer server.Close()
+
+	gateway.preloadH264("CAM123")
+	if !called {
+		t.Fatal("preload endpoint was not called")
+	}
+}
+
+func TestStartPreloadDeduplicatesConcurrentWorkPerStream(t *testing.T) {
+	gateway, server := testGateway(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer server.Close()
+
+	var calls atomic.Int32
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	gateway.preload = func(string) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+	}
+
+	gateway.startPreload("CAM123")
+	gateway.startPreload("CAM123")
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("preload did not start")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("concurrent preload calls = %d, want 1", got)
+	}
+
+	close(release)
+	deadline := time.Now().Add(time.Second)
+	for {
+		gateway.preloadMu.Lock()
+		active := gateway.preloading["CAM123"]
+		gateway.preloadMu.Unlock()
+		if !active {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("completed preload remained active")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -116,6 +178,25 @@ func TestRejectsUnauthenticatedAndExcessSurface(t *testing.T) {
 				t.Fatalf("status = %d, want %d", response.Code, test.status)
 			}
 		})
+	}
+}
+
+func TestAllowsEveryConfiguredStream(t *testing.T) {
+	gateway, server := testGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("dst") != "CAM456" {
+			t.Fatalf("unexpected destination: %s", r.URL.RawQuery)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	response := httptest.NewRecorder()
+	gateway.ServeHTTP(response, httptest.NewRequest(
+		http.MethodPost, "/api/webrtc?dst=CAM456&token="+testToken,
+		strings.NewReader("offer"),
+	))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 

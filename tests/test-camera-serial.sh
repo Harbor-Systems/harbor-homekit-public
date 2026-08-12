@@ -48,4 +48,55 @@ if "$ROOT_DIR/configure-camera-serial.sh" \
   exit 1
 fi
 
+"$ROOT_DIR/add-camera-config.sh" \
+  "$TEST_DIR/configured.yaml" "2400000001" "12344321" >/dev/null
+section_has_camera() {
+  section="$1"
+  serial="$2"
+  awk -v section="$section" -v serial="$serial" '
+    $0 == section ":" { inside=1; next }
+    inside && /^[^[:space:]#]/ { inside=0 }
+    inside && $0 == "  \"" serial "\":" { found=1 }
+    END { exit found ? 0 : 1 }
+  ' "$TEST_DIR/configured.yaml"
+}
+if ! section_has_camera streams 2400000001 ||
+   ! section_has_camera homekit 2400000001; then
+  echo "Additional camera was not added to both streams and HomeKit" >&2
+  exit 1
+fi
+if ! section_has_camera streams 2400000000 ||
+   ! section_has_camera homekit 2400000000; then
+  echo "Adding a camera removed or duplicated the existing camera" >&2
+  exit 1
+fi
+"$ROOT_DIR/add-camera-config.sh" \
+  "$TEST_DIR/configured.yaml" "2400000001" "12344321" >/dev/null
+if [ "$(grep -Fc '"2400000001":' "$TEST_DIR/configured.yaml")" -ne 2 ]; then
+  echo "Adding the same camera twice was not idempotent" >&2
+  exit 1
+fi
+
+cat > "$TEST_DIR/separated.yaml" <<'YAML'
+streams:
+  "EXISTING":
+    - ffmpeg:EXISTING#video=h264
+api:
+  listen: "127.0.0.1:1985"
+homekit:
+  "EXISTING":
+    pin: 12344321
+YAML
+"$ROOT_DIR/add-camera-config.sh" \
+  "$TEST_DIR/separated.yaml" "2400000002" "12344321" >/dev/null
+if ! awk '
+  /^streams:/ { in_streams=1; next }
+  in_streams && /^[^[:space:]#]/ { exit found ? 0 : 1 }
+  in_streams && /"2400000002":/ { found=1 }
+  END { if (in_streams) exit found ? 0 : 1 }
+' "$TEST_DIR/separated.yaml"; then
+  echo "Additional camera escaped the streams mapping" >&2
+  exit 1
+fi
+
 echo "Camera serial tests passed"

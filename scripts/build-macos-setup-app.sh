@@ -24,9 +24,13 @@ lipo -create "$build_dir/setup-arm64" "$build_dir/setup-x86_64" \
 
 cp "$root/install-macos-service.sh" "$contents/Resources/installer/"
 cp "$root/configure-camera-serial.sh" "$contents/Resources/installer/"
+cp "$root/add-camera-config.sh" "$contents/Resources/installer/"
 cp "$root/generate-homekit-pin.sh" "$contents/Resources/installer/"
 cp "$root/run-native.sh" "$contents/Resources/installer/"
 cp "$root/go2rtc.yaml" "$contents/Resources/installer/"
+if [ -x "$root/harbor-whip-gateway" ]; then
+  cp "$root/harbor-whip-gateway" "$contents/Resources/installer/"
+fi
 cp "$root/macos/HarborLogo.png" "$contents/Resources/"
 mkdir -p "$contents/Resources/installer/scripts"
 cp "$root/scripts/versions.env" "$contents/Resources/installer/scripts/"
@@ -56,7 +60,7 @@ cat > "$contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>Harbor HomeKit Bridge Setup</string>
   <key>CFBundleIconFile</key><string>HarborHomeKit</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.4.0</string>
+  <key>CFBundleShortVersionString</key><string>0.5.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSLocalNetworkUsageDescription</key><string>Harbor HomeKit Bridge connects your Harbor camera to this Mac on your local network.</string>

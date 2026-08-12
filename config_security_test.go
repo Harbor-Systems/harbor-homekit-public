@@ -44,7 +44,7 @@ func TestGo2RTCConfigHasExactSecurityBoundary(t *testing.T) {
 
 	assertEqual(t, "api.listen", config.API.Listen, "127.0.0.1:1985")
 	assertEqual(t, "rtsp.listen", config.RTSP.Listen, "127.0.0.1:8554")
-	assertEqual(t, "api.allow_paths", config.API.AllowPaths, []string{"/api/streams", "/api/webrtc"})
+	assertEqual(t, "api.allow_paths", config.API.AllowPaths, []string{"/api/streams", "/api/webrtc", "/api/preload"})
 	assertEqual(t, "exec.allow_paths", config.Exec.AllowPaths, []string{"ffmpeg"})
 	assertEqual(t, "app.modules", config.App.Modules, []string{
 		"api", "rtsp", "webrtc", "exec", "ffmpeg", "homekit", "srtp",

@@ -42,8 +42,8 @@ if ! grep -Fq 'for patch in "$ROOT_DIR"/patches/*.patch' scripts/build-go2rtc.sh
   exit 1
 fi
 
-if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.4.0" ]; then
-  echo "Native installer must use the signed and notarized v0.4.0 release" >&2
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.5.0" ]; then
+  echo "Native installer must use the signed and notarized v0.5.0 release" >&2
   exit 1
 fi
 
@@ -61,8 +61,8 @@ if ! grep -Fq "[ \"\$os_tag\" = \"mac\" ] && [ ! -x \"\$LAUNCHER_BIN\" ]" run-na
   exit 1
 fi
 
-if ! grep -Fq '<string>0.4.0</string>' scripts/build-macos-setup-app.sh; then
-  echo "macOS app version must match release v0.4.0" >&2
+if ! grep -Fq '<string>0.5.0</string>' scripts/build-macos-setup-app.sh; then
+  echo "macOS app version must match release v0.5.0" >&2
   exit 1
 fi
 

@@ -21,6 +21,8 @@ Harbor camera ──authenticated WHIP──► narrow gateway ──localhost�
 - An iPhone or iPad with the Apple Home app
 - An always-on Mac or Linux computer on the same LAN
 - The camera serial number
+- Access to the router or Wi-Fi system so the bridge computer can receive a
+  DHCP reservation
 
 On macOS, the bridge starts after the user logs in. It does not run at the
 FileVault login screen.
@@ -35,8 +37,16 @@ the app from Applications. The setup wizard:
 2. installs and starts the always-on bridge;
 3. displays a copyable, authenticated WHIP endpoint and shows where to paste it
    in the Harbor app;
-4. confirms the camera has connected; and
-5. displays the private HomeKit setup code and Apple Home instructions.
+4. confirms the camera has connected;
+5. requires the customer to reserve the bridge Mac's IP address in their
+   router (without port forwarding); and
+6. displays the private HomeKit setup code and Apple Home instructions.
+
+The DHCP reservation is required because current Harbor camera firmware uses
+the numeric bridge address in its WHIP endpoint. If the router later assigns a
+different address to the Mac, video will stop reaching Apple Home. Reserve the
+address in the router rather than manually configuring a static address in
+macOS, and do not expose the bridge with a port-forwarding rule.
 
 For support or command-line installation, download the repository source and
 run:

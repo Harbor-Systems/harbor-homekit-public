@@ -36,6 +36,11 @@ done
 
 (
   cd "$BUILD_DIR/go2rtc"
+  go test ./internal/homekit
+)
+
+(
+  cd "$BUILD_DIR/go2rtc"
   CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
     go build -trimpath -buildvcs=false \
       -ldflags="-buildid=" \
