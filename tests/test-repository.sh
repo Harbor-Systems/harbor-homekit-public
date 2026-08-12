@@ -42,8 +42,8 @@ if ! grep -Fq 'for patch in "$ROOT_DIR"/patches/*.patch' scripts/build-go2rtc.sh
   exit 1
 fi
 
-if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.5.1" ]; then
-  echo "Native installer must use the signed and notarized v0.5.1 release" >&2
+if [ "$(awk -F= '/^HARBOR_HOMEKIT_RELEASE=/{print $2}' scripts/versions.env)" != "v0.5.2" ]; then
+  echo "Native installer must use the signed and notarized v0.5.2 release" >&2
   exit 1
 fi
 
@@ -71,8 +71,8 @@ if ! grep -Fq "$required_api_allowlist" go2rtc.yaml ||
   exit 1
 fi
 
-if ! grep -Fq '<string>0.5.1</string>' scripts/build-macos-setup-app.sh; then
-  echo "macOS app version must match release v0.5.1" >&2
+if ! grep -Fq '<string>0.5.2</string>' scripts/build-macos-setup-app.sh; then
+  echo "macOS app version must match release v0.5.2" >&2
   exit 1
 fi
 
@@ -80,12 +80,19 @@ for required_setup_safety_text in \
   'installedSetupCode = ""' \
   '"-sTCP:LISTEN"' \
   'readDataToEndOfFile()' \
+  'NWBrowser(for: .bonjour(type: "_hap._tcp"' \
   'replaceItemAt(destination, withItemAt: staging)'; do
   if ! grep -Fq "$required_setup_safety_text" macos/HarborHomeKitSetup.swift; then
     echo "macOS bridge UI is missing safety behavior: $required_setup_safety_text" >&2
     exit 1
   fi
 done
+
+if ! grep -Fq 'CFBundleIdentifier</key><string>co.harbor.homekit.bridge' \
+  scripts/build-macos-setup-app.sh; then
+  echo "Setup and background bridge must share the Local Network bundle ID" >&2
+  exit 1
+fi
 
 if [ ! -s macos/HarborLogo.png ] || \
    ! grep -Fq 'macos/HarborLogo.png' scripts/build-macos-setup-dmg.sh; then

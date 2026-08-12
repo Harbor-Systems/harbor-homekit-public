@@ -1,9 +1,30 @@
 import AppKit
+import Network
 import SwiftUI
 
 private enum HarborBrand {
     static let primary = Color(red: 168 / 255, green: 94 / 255, blue: 138 / 255)
     static let highlight = Color(red: 237 / 255, green: 244 / 255, blue: 249 / 255)
+}
+
+private final class HomeKitDiscoveryProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+    private let continuation: CheckedContinuation<Bool, Never>
+    var browser: NWBrowser?
+
+    init(_ continuation: CheckedContinuation<Bool, Never>) {
+        self.continuation = continuation
+    }
+
+    func finish(_ result: Bool) {
+        lock.lock()
+        guard !completed else { lock.unlock(); return }
+        completed = true
+        lock.unlock()
+        browser?.cancel()
+        continuation.resume(returning: result)
+    }
 }
 
 private struct HarborHeader: View {
@@ -24,7 +45,7 @@ private struct HarborHeader: View {
 
 @MainActor
 final class SetupModel: ObservableObject {
-    enum Step { case moveToApplications, camera, installing, harborApp, network, homeKit, bridge }
+    enum Step { case moveToApplications, camera, installing, harborApp, network, discovery, homeKit, bridge }
 
     @Published var step: Step = .camera
     @Published var bridgeRunning = false
@@ -244,6 +265,11 @@ final class SetupModel: ObservableObject {
                     self.errorMessage = result.output.isEmpty ? "Installation failed without an error message." : result.output
                 }
             }
+            // Starting an NWBrowser from this foreground, signed app is what
+            // causes macOS to request Local Network access. The setup app and
+            // installed background bridge intentionally share a bundle ID, so
+            // the grant applies when launchd starts the bridge later.
+            _ = await Self.waitForHomeKitAdvertisement(timeout: 2)
         }
     }
 
@@ -316,7 +342,40 @@ final class SetupModel: ObservableObject {
 
     func confirmNetworkReservation() {
         networkReservationConfirmed = true
-        step = .homeKit
+        step = .discovery
+        detail = "Checking that Apple Home can discover the camera…"
+        errorMessage = ""
+        Task.detached {
+            let visible = await Self.waitForHomeKitAdvertisement(timeout: 12)
+            await MainActor.run {
+                self.detail = ""
+                if visible {
+                    self.step = .homeKit
+                } else {
+                    self.step = .network
+                    self.errorMessage = "HomeKit discovery is blocked. Open System Settings > Privacy & Security > Local Network, enable Harbor HomeKit Bridge, then click Check Discovery Again."
+                }
+            }
+        }
+    }
+
+    func retryDiscovery() { confirmNetworkReservation() }
+
+    private nonisolated static func waitForHomeKitAdvertisement(timeout: TimeInterval) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let browser = NWBrowser(for: .bonjour(type: "_hap._tcp", domain: "local."), using: .tcp)
+            let queue = DispatchQueue(label: "co.harbor.homekit.discovery")
+            let probe = HomeKitDiscoveryProbe(continuation)
+            probe.browser = browser
+            browser.browseResultsChangedHandler = { results, _ in
+                if !results.isEmpty { probe.finish(true) }
+            }
+            browser.stateUpdateHandler = { state in
+                if case .failed = state { probe.finish(false) }
+            }
+            browser.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + timeout) { probe.finish(false) }
+        }
     }
 
     func addAnotherCamera() {
@@ -392,6 +451,7 @@ struct SetupView: View {
             case .installing: installingStep
             case .harborApp: harborAppStep
             case .network: networkStep
+            case .discovery: discoveryStep
             case .homeKit: homeKitStep
             case .bridge: bridgeStep
             }
@@ -520,6 +580,16 @@ struct SetupView: View {
                 .font(.caption).foregroundStyle(.secondary)
             Button("I've Reserved This IP") { model.confirmNetworkReservation() }
                 .buttonStyle(.borderedProminent)
+            if !model.errorMessage.isEmpty {
+                Button("Check Discovery Again") { model.retryDiscovery() }
+            }
+        }
+    }
+
+    private var discoveryStep: some View {
+        HStack(spacing: 14) {
+            ProgressView()
+            Text(model.detail)
         }
     }
 
