@@ -157,7 +157,7 @@ fi
 # top-level security/listener blocks.
 if ! grep -Fq 'listen: "127.0.0.1:1985"' "$INSTALL_DIR/go2rtc.yaml" ||
    ! grep -Fq 'listen: "127.0.0.1:8554"' "$INSTALL_DIR/go2rtc.yaml" ||
-   ! grep -Fq 'allow_paths: [/api/streams, /api/webrtc]' "$INSTALL_DIR/go2rtc.yaml" ||
+   ! grep -Fq 'allow_paths: [/api/streams, /api/webrtc, /api/preload]' "$INSTALL_DIR/go2rtc.yaml" ||
    ! grep -Fq 'allow_paths: [ffmpeg]' "$INSTALL_DIR/go2rtc.yaml"; then
   if grep -Eq '^(app|api|rtsp|exec):[[:space:]]*$' "$INSTALL_DIR/go2rtc.yaml"; then
     echo "The installed config has custom listener/security settings." >&2
@@ -172,7 +172,7 @@ if ! grep -Fq 'listen: "127.0.0.1:1985"' "$INSTALL_DIR/go2rtc.yaml" ||
       '' \
       'api:' \
       '  listen: "127.0.0.1:1985"' \
-      '  allow_paths: [/api/streams, /api/webrtc]' \
+      '  allow_paths: [/api/streams, /api/webrtc, /api/preload]' \
       '' \
       'rtsp:' \
       '  listen: "127.0.0.1:8554"' \
