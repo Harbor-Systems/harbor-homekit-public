@@ -16,6 +16,7 @@ for arch in arm64 x86_64; do
     -target "$arch-apple-macos13.0" \
     -framework SwiftUI \
     -framework AppKit \
+    -framework Network \
     "$root/macos/HarborHomeKitSetup.swift" \
     -o "$build_dir/setup-$arch"
 done
@@ -54,16 +55,17 @@ cat > "$contents/Info.plist" <<'PLIST'
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>Harbor HomeKit Bridge</string>
-  <key>CFBundleIdentifier</key><string>co.harbor.homekit.bridge.setup</string>
+  <key>CFBundleIdentifier</key><string>co.harbor.homekit.bridge</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Harbor HomeKit Bridge</string>
   <key>CFBundleDisplayName</key><string>Harbor HomeKit Bridge Setup</string>
   <key>CFBundleIconFile</key><string>HarborHomeKit</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.5.1</string>
+  <key>CFBundleShortVersionString</key><string>0.5.2</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSLocalNetworkUsageDescription</key><string>Harbor HomeKit Bridge connects your Harbor camera to this Mac on your local network.</string>
+  <key>NSBonjourServices</key><array><string>_hap._tcp</string></array>
 </dict></plist>
 PLIST
 
