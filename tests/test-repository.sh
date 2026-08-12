@@ -88,9 +88,16 @@ for required_setup_safety_text in \
   fi
 done
 
-if ! grep -Fq 'CFBundleIdentifier</key><string>co.harbor.homekit.bridge' \
-  scripts/build-macos-setup-app.sh; then
+setup_bundle_id="$(sed -n 's|.*CFBundleIdentifier</key><string>\([^<]*\)</string>.*|\1|p' scripts/build-macos-setup-app.sh | head -1)"
+background_bundle_id="$(sed -n 's/^APP_BUNDLE_ID="\([^"]*\)"$/\1/p' install-macos-service.sh | head -1)"
+if [ -z "$setup_bundle_id" ] || [ "$setup_bundle_id" != "$background_bundle_id" ]; then
   echo "Setup and background bridge must share the Local Network bundle ID" >&2
+  exit 1
+fi
+
+if ! grep -Fq '<key>NSBonjourServices</key><array><string>_hap._tcp</string></array>' \
+  scripts/build-macos-setup-app.sh; then
+  echo "Setup app must declare the HomeKit Bonjour service" >&2
   exit 1
 fi
 

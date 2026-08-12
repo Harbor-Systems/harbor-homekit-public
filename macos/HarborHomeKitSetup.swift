@@ -252,7 +252,7 @@ final class SetupModel: ObservableObject {
 
         Task.detached {
             let result = Self.runInstaller(serial: await self.serial)
-            await MainActor.run {
+            let installed = await MainActor.run {
                 if result.status == 0,
                    let endpoint = Self.value(after: "Harbor camera WHIP endpoint:", in: result.output),
                    let code = Self.inlineValue(after: "HomeKit setup code:", in: result.output) {
@@ -260,11 +260,14 @@ final class SetupModel: ObservableObject {
                     self.setupCode = Self.formatSetupCode(code)
                     self.step = .harborApp
                     self.detail = ""
+                    return true
                 } else {
                     self.step = .camera
                     self.errorMessage = result.output.isEmpty ? "Installation failed without an error message." : result.output
+                    return false
                 }
             }
+            guard installed else { return }
             // Starting an NWBrowser from this foreground, signed app is what
             // causes macOS to request Local Network access. The setup app and
             // installed background bridge intentionally share a bundle ID, so
@@ -383,6 +386,7 @@ final class SetupModel: ObservableObject {
         endpoint = ""
         detail = ""
         errorMessage = ""
+        networkReservationConfirmed = false
         step = .camera
     }
 

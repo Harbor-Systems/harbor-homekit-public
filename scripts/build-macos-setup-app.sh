@@ -65,6 +65,7 @@ cat > "$contents/Info.plist" <<'PLIST'
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSLocalNetworkUsageDescription</key><string>Harbor HomeKit Bridge connects your Harbor camera to this Mac on your local network.</string>
+  <key>NSBonjourServices</key><array><string>_hap._tcp</string></array>
 </dict></plist>
 PLIST
 
