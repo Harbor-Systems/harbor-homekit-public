@@ -35,7 +35,7 @@ exec:
 #   dump_extra              -> repeat SPS/PPS in-band (HomeKit has no SDP)
 #   sliced-threads=0        -> one slice per frame; Apple's frame assembler
 #                              rejects multi-slice frames ("Too many slices")
-#   -ar 16000 -ac 1 -b:a 24k -> the negotiated 16 kHz mono Opus
+  #   -ar 16000 -ac 1 -b:a 24k -> the negotiated 16 kHz mono Opus
 ffmpeg:
   h264: "-c:v libx264 -g 50 -profile:v main -level:v 4.0 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
 

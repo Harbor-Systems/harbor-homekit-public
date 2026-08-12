@@ -21,7 +21,7 @@ func testGateway(t *testing.T, upstream http.Handler) (*gateway, *httptest.Serve
 		t.Fatal(err)
 	}
 	return &gateway{
-		token: testToken, stream: "CAM123", upstream: target,
+		token: testToken, streams: map[string]struct{}{"CAM123": {}, "CAM456": {}}, upstream: target,
 		httpClient: server.Client(),
 	}, server
 }
@@ -41,7 +41,7 @@ func TestSuccessfulPublishWritesPrivateStatusMarker(t *testing.T) {
 		http.MethodPost, "/api/webrtc?dst=CAM123&token="+testToken,
 		strings.NewReader("offer"),
 	))
-	info, err := os.Stat(gateway.statusFile)
+	info, err := os.Stat(gateway.statusFile + ".CAM123")
 	if err != nil {
 		t.Fatalf("status marker was not written: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestPreloadH264UsesLoopbackAPI(t *testing.T) {
 	gateway, server := testGateway(t, upstream)
 	defer server.Close()
 
-	gateway.preloadH264()
+	gateway.preloadH264("CAM123")
 	if !called {
 		t.Fatal("preload endpoint was not called")
 	}
@@ -135,6 +135,25 @@ func TestRejectsUnauthenticatedAndExcessSurface(t *testing.T) {
 				t.Fatalf("status = %d, want %d", response.Code, test.status)
 			}
 		})
+	}
+}
+
+func TestAllowsEveryConfiguredStream(t *testing.T) {
+	gateway, server := testGateway(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("dst") != "CAM456" {
+			t.Fatalf("unexpected destination: %s", r.URL.RawQuery)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	response := httptest.NewRecorder()
+	gateway.ServeHTTP(response, httptest.NewRequest(
+		http.MethodPost, "/api/webrtc?dst=CAM456&token="+testToken,
+		strings.NewReader("offer"),
+	))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 

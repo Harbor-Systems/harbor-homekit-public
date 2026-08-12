@@ -22,12 +22,12 @@ const maxSDPBytes = 1 << 20
 
 type gateway struct {
 	token      string
-	stream     string
+	streams    map[string]struct{}
 	sourceIP   net.IP
 	upstream   *url.URL
 	statusFile string
 	httpClient *http.Client
-	onPublish  func()
+	onPublish  func(string)
 }
 
 // main validates configuration and serves the restricted WHIP endpoint.
@@ -39,7 +39,7 @@ func main() {
 
 	handler := &gateway{
 		token:      cfg.token,
-		stream:     cfg.stream,
+		streams:    cfg.streams,
 		sourceIP:   cfg.sourceIP,
 		upstream:   cfg.upstream,
 		statusFile: cfg.statusFile,
@@ -70,7 +70,7 @@ func main() {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("Harbor WHIP gateway listening on %s for one configured stream", cfg.listen)
+	log.Printf("Harbor WHIP gateway listening on %s for %d configured stream(s)", cfg.listen, len(cfg.streams))
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func main() {
 type config struct {
 	listen     string
 	token      string
-	stream     string
+	streams    map[string]struct{}
 	sourceIP   net.IP
 	upstream   *url.URL
 	statusFile string
@@ -101,9 +101,19 @@ func configFromEnvironment() (*config, error) {
 		return nil, err
 	}
 
-	stream := os.Getenv("HARBOR_WHIP_STREAM")
-	if stream == "" {
-		return nil, errors.New("HARBOR_WHIP_STREAM is required")
+	streamsText := os.Getenv("HARBOR_WHIP_STREAMS")
+	if streamsText == "" {
+		streamsText = os.Getenv("HARBOR_WHIP_STREAM")
+	}
+	streams := make(map[string]struct{})
+	for _, stream := range strings.Split(streamsText, ",") {
+		stream = strings.TrimSpace(stream)
+		if stream != "" {
+			streams[stream] = struct{}{}
+		}
+	}
+	if len(streams) == 0 {
+		return nil, errors.New("HARBOR_WHIP_STREAMS is required")
 	}
 
 	upstreamText := os.Getenv("HARBOR_GO2RTC_URL")
@@ -128,7 +138,7 @@ func configFromEnvironment() (*config, error) {
 		listen = ":1984"
 	}
 	return &config{
-		listen: listen, token: token, stream: stream,
+		listen: listen, token: token, streams: streams,
 		sourceIP: sourceIP, upstream: upstream,
 		statusFile: os.Getenv("HARBOR_WHIP_STATUS_FILE"),
 	}, nil
@@ -197,12 +207,13 @@ func (g *gateway) sourceAllowed(remoteAddr string) bool {
 // handlePublish validates a publish request before forwarding its SDP.
 func (g *gateway) handlePublish(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	if query.Get("dst") != g.stream || hasUnexpectedQuery(query, "dst", "token") {
+	stream := query.Get("dst")
+	if _, allowed := g.streams[stream]; !allowed || hasUnexpectedQuery(query, "dst", "token") {
 		http.Error(w, "invalid destination", http.StatusForbidden)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxSDPBytes)
-	g.proxy(w, r, url.Values{"dst": []string{g.stream}})
+	g.proxy(w, r, url.Values{"dst": []string{stream}}, stream)
 }
 
 // handleDelete validates cleanup for an established WHIP session.
@@ -213,7 +224,7 @@ func (g *gateway) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid session", http.StatusBadRequest)
 		return
 	}
-	g.proxy(w, r, url.Values{"id": []string{id}})
+	g.proxy(w, r, url.Values{"id": []string{id}}, "")
 }
 
 // hasUnexpectedQuery rejects duplicated and non-allowlisted query parameters.
@@ -231,7 +242,7 @@ func hasUnexpectedQuery(values url.Values, allowed ...string) bool {
 }
 
 // proxy forwards only the sanitized request and rewrites session locations.
-func (g *gateway) proxy(w http.ResponseWriter, incoming *http.Request, query url.Values) {
+func (g *gateway) proxy(w http.ResponseWriter, incoming *http.Request, query url.Values, stream string) {
 	target := *g.upstream
 	target.Path = "/api/webrtc"
 	target.RawQuery = query.Encode()
@@ -275,12 +286,13 @@ func (g *gateway) proxy(w http.ResponseWriter, incoming *http.Request, query url
 
 	w.WriteHeader(response.StatusCode)
 	if incoming.Method == http.MethodPost && response.StatusCode >= 200 && response.StatusCode < 300 && g.statusFile != "" {
-		if err := os.WriteFile(g.statusFile, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+		statusFile := g.statusFile + "." + stream
+		if err := os.WriteFile(statusFile, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
 			log.Printf("WHIP status update failed: %v", err)
 		}
 	}
 	if incoming.Method == http.MethodPost && response.StatusCode >= 200 && response.StatusCode < 300 && g.onPublish != nil {
-		go g.onPublish()
+		go g.onPublish(stream)
 	}
 	if _, err := io.Copy(w, io.LimitReader(response.Body, maxSDPBytes)); err != nil {
 		log.Printf("WHIP response copy failed: %v", err)
@@ -290,11 +302,11 @@ func (g *gateway) proxy(w http.ResponseWriter, incoming *http.Request, query url
 // preloadH264 keeps the HomeKit-compatible transcoder warm after the camera
 // completes WHIP publishing. A cold decoder's first frame can be gray, while a
 // warm producer supplies each Apple snapshot request with a fresh keyframe.
-func (g *gateway) preloadH264() {
+func (g *gateway) preloadH264(stream string) {
 	for attempt := 0; attempt < 15; attempt++ {
 		target := *g.upstream
 		target.Path = "/api/preload"
-		query := url.Values{"src": []string{g.stream}, "video": []string{"h264"}}
+		query := url.Values{"src": []string{stream}, "video": []string{"h264"}}
 		target.RawQuery = query.Encode()
 
 		request, err := http.NewRequestWithContext(context.Background(), http.MethodPut, target.String(), nil)

@@ -140,7 +140,7 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   echo "         your publisher sends non-H264/OPUS codecs." >&2
 fi
 
-stream_name="$(
+stream_names="$(
   awk '
     /^streams:/ { in_streams=1; next }
     in_streams && /^[^[:space:]#]/ { exit }
@@ -149,21 +149,21 @@ stream_name="$(
       sub(/^[[:space:]]+"/, "", line)
       sub(/":.*/, "", line)
       print line
-      exit
     }
   ' go2rtc.yaml
 )"
-if [ -z "$stream_name" ] || [ "$stream_name" = "CAMERA_SERIAL" ]; then
+if [ -z "$stream_names" ] || printf '%s\n' "$stream_names" | grep -Fxq 'CAMERA_SERIAL'; then
   echo "Could not determine the configured Harbor camera serial." >&2
   exit 1
 fi
+stream_list="$(printf '%s\n' "$stream_names" | paste -sd, -)"
 
 if [ ! -f "$TOKEN_FILE" ]; then
   umask 077
   od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]' > "$TOKEN_FILE"
 fi
 chmod 600 "$TOKEN_FILE"
-rm -f "$STATUS_FILE"
+rm -f "$STATUS_FILE".*
 
 go2rtc_pid=""
 gateway_pid=""
@@ -180,7 +180,7 @@ trap cleanup EXIT INT TERM
 "$BIN" -config go2rtc.yaml &
 go2rtc_pid="$!"
 HARBOR_WHIP_TOKEN_FILE="$TOKEN_FILE" \
-HARBOR_WHIP_STREAM="$stream_name" \
+HARBOR_WHIP_STREAMS="$stream_list" \
 HARBOR_WHIP_STATUS_FILE="$STATUS_FILE" \
 HARBOR_GO2RTC_URL="http://127.0.0.1:1985" \
   "$GATEWAY_BIN" &
