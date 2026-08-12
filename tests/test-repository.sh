@@ -66,7 +66,7 @@ fi
 # customer customization.
 required_api_allowlist='allow_paths: [/api/streams, /api/webrtc, /api/preload]'
 if ! grep -Fq "$required_api_allowlist" go2rtc.yaml ||
-   [ "$(grep -Fc "$required_api_allowlist" install-macos-service.sh)" -lt 2 ]; then
+   [ "$(grep -Fc "$required_api_allowlist" install-macos-service.sh)" -ne 2 ]; then
   echo "Installer and template API allowlists are out of sync" >&2
   exit 1
 fi
