@@ -17,6 +17,11 @@ if grep -Fq "  \"$CAMERA_SERIAL\":" "$CONFIG_PATH"; then
   echo "Camera $CAMERA_SERIAL is already configured."
   exit 0
 fi
+if ! grep -Eq '^streams:[[:space:]]*$' "$CONFIG_PATH" ||
+   ! grep -Eq '^homekit:[[:space:]]*$' "$CONFIG_PATH"; then
+  echo "Configuration must contain top-level streams and homekit mappings." >&2
+  exit 1
+fi
 
 updated="$(mktemp "${CONFIG_PATH}.camera.XXXXXX")"
 cleanup() { rm -f "$updated"; }
@@ -34,8 +39,17 @@ LC_ALL=C awk -v serial="$CAMERA_SERIAL" -v pin="$HOMEKIT_PIN" '
     print "    name: Harbor Camera " serial
     added_homekit=1
   }
-  /^homekit:[[:space:]]*$/ {
+  /^streams:[[:space:]]*$/ {
+    in_streams=1
+    print
+    next
+  }
+  in_streams && /^[^[:space:]#]/ && !added_stream {
     print_stream()
+    added_stream=1
+    in_streams=0
+  }
+  /^homekit:[[:space:]]*$/ {
     in_homekit=1
     print
     next
@@ -47,11 +61,10 @@ LC_ALL=C awk -v serial="$CAMERA_SERIAL" -v pin="$HOMEKIT_PIN" '
   }
   { print }
   END {
+    if (in_streams && !added_stream) {
+      print_stream()
+    }
     if (!added_homekit) {
-      if (!in_homekit) {
-        print ""
-        print "homekit:"
-      }
       print_homekit()
     }
   }

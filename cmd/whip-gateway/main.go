@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -28,6 +29,9 @@ type gateway struct {
 	statusFile string
 	httpClient *http.Client
 	onPublish  func(string)
+	preload    func(string)
+	preloadMu  sync.Mutex
+	preloading map[string]bool
 }
 
 // main validates configuration and serves the restricted WHIP endpoint.
@@ -50,7 +54,8 @@ func main() {
 			},
 		},
 	}
-	handler.onPublish = handler.preloadH264
+	handler.preload = handler.preloadH264
+	handler.onPublish = handler.startPreload
 	server := &http.Server{
 		Addr:              cfg.listen,
 		Handler:           handler,
@@ -323,4 +328,29 @@ func (g *gateway) preloadH264(stream string) {
 		time.Sleep(time.Second)
 	}
 	log.Printf("HomeKit H264 preview pipeline could not be preloaded")
+}
+
+// startPreload bounds warmup work to one retry loop per configured stream.
+func (g *gateway) startPreload(stream string) {
+	g.preloadMu.Lock()
+	if g.preloading == nil {
+		g.preloading = make(map[string]bool)
+	}
+	if g.preloading[stream] {
+		g.preloadMu.Unlock()
+		return
+	}
+	g.preloading[stream] = true
+	g.preloadMu.Unlock()
+
+	go func() {
+		defer func() {
+			g.preloadMu.Lock()
+			delete(g.preloading, stream)
+			g.preloadMu.Unlock()
+		}()
+		if g.preload != nil {
+			g.preload(stream)
+		}
+	}()
 }

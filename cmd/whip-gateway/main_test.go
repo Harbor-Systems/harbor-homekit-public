@@ -7,7 +7,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -66,6 +68,47 @@ func TestPreloadH264UsesLoopbackAPI(t *testing.T) {
 	gateway.preloadH264("CAM123")
 	if !called {
 		t.Fatal("preload endpoint was not called")
+	}
+}
+
+func TestStartPreloadDeduplicatesConcurrentWorkPerStream(t *testing.T) {
+	gateway, server := testGateway(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer server.Close()
+
+	var calls atomic.Int32
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	gateway.preload = func(string) {
+		calls.Add(1)
+		started <- struct{}{}
+		<-release
+	}
+
+	gateway.startPreload("CAM123")
+	gateway.startPreload("CAM123")
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("preload did not start")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("concurrent preload calls = %d, want 1", got)
+	}
+
+	close(release)
+	deadline := time.Now().Add(time.Second)
+	for {
+		gateway.preloadMu.Lock()
+		active := gateway.preloading["CAM123"]
+		gateway.preloadMu.Unlock()
+		if !active {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("completed preload remained active")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
